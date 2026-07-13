@@ -1,0 +1,85 @@
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Опрос сотрудников — ИИ</title>
+<link rel="icon" href="data:," />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Raleway:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+<link rel="stylesheet" href="css/styles.css?v=20260713-knowledge-review" />
+
+<!-- Верхний статус-бар (виден на протяжении всего теста) -->
+<div id="progress" class="progress hidden">
+  <div id="progress-fill" class="progress-fill"></div>
+</div>
+
+<div id="app">
+
+  <!-- Экран 1: ввод кода -->
+  <section id="screen-code" class="screen">
+    <div class="card">
+      <h1>Вход в опрос</h1>
+      <p class="muted">Введите персональный код, выданный вам.</p>
+      <input id="code-input" type="text" autocomplete="off" placeholder="КОД" />
+      <button id="code-submit" class="btn">Войти</button>
+      <p id="code-error" class="error hidden"></p>
+    </div>
+  </section>
+
+  <!-- Экран продолжения — если найден незавершённый проход -->
+  <section id="screen-resume" class="screen hidden">
+    <div class="card">
+      <h1>Продолжить опрос?</h1>
+      <p class="muted">Найден незавершённый опрос под этим кодом. Продолжите с того места,
+        где вы остановились.</p>
+      <div class="thanks-btns">
+        <button id="resume-continue" class="btn">Продолжить</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Экран 2: приветствие -->
+  <section id="screen-welcome" class="screen hidden">
+    <div class="welcome">
+      <div id="welcome-media" class="media"></div>
+      <h2 id="welcome-hello"></h2>
+      <h3 id="principles-title" class="principles-title"></h3>
+      <ul id="principles" class="principles"></ul>
+      <button id="start-btn" class="btn hidden">Приступить</button>
+    </div>
+  </section>
+
+  <!-- Экран 3: вопросы -->
+  <section id="screen-survey" class="screen hidden">
+    <div class="survey-stage">
+      <img id="q-mascot" class="mascot" alt="" />
+      <div class="q-card">
+        <div id="q-timer" class="timer hidden"></div>
+        <h2 id="q-text" class="q-text"></h2>
+        <div id="q-body" class="q-body"></div>
+        <div class="survey-nav">
+          <button id="back-btn" class="btn ghost hidden">← Назад</button>
+          <span id="q-hint" class="hint"></span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Экран 4: благодарность -->
+  <section id="screen-thanks" class="screen hidden">
+    <div class="welcome">
+      <div id="thanks-media" class="media media-wide"></div>
+      <p id="thanks-text" class="thanks-text"></p>
+      <div class="thanks-btns">
+        <button id="dl-protocol" class="btn">⬇ Скачать протокол</button>
+        <button id="copy-prompt" class="btn ghost">⧉ Скопировать промпт для ИИ</button>
+      </div>
+      <p id="copy-note" class="hint hidden">Промпт скопирован в буфер обмена.</p>
+    </div>
+  </section>
+
+</div>
+
+<script src="js/config.js?v=20260713-knowledge-review"></script>
+<script src="js/api.js?v=20260713-knowledge-review"></script>
+<script src="js/survey.js?v=20260713-knowledge-review"></script>
+<script src="js/app.js?v=20260713-knowledge-review"></script>

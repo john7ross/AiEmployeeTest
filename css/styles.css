@@ -1,0 +1,157 @@
+/* Опрос сотрудников — оформление в стиле dobrozaim.ru (Raleway, зелёный #005C32). */
+:root {
+  --brand:      #005C32;
+  --brand-dark: #004A28;
+  --brand-tint: #E6EFEB;
+  --brand-red:  #C9150D;
+  --bg:         #FFFFFF;
+  --surface:    #F0F3F7;
+  --ink:        #262726;
+  --muted:      #565759;
+  --error:      #C9150D;
+  --accent:     #FFDD2D;
+  --line:       #E4E8EE;
+  --radius:     16px;
+  --radius-sm:  8px;
+  --shadow:     0 10px 34px rgba(0, 60, 33, .10);
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; height: 100%; }
+body {
+  font-family: 'Raleway', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+}
+
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+.error { color: var(--error); margin-top: 10px; font-weight: 500; }
+
+/* Статус-бар */
+.progress { position: fixed; top: 0; left: 0; right: 0; height: 6px; background: var(--surface); z-index: 50; }
+.progress-fill { height: 100%; width: 0; background: var(--brand); transition: width .35s ease; }
+
+#app { min-height: 100%; }
+.screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 28px 20px; }
+
+/* Карточка ввода кода */
+.card {
+  background: var(--bg); border: 1px solid var(--line); border-radius: var(--radius);
+  padding: 36px 32px; width: 100%; max-width: 400px; text-align: center; box-shadow: var(--shadow);
+}
+.card h1 { margin: 0 0 8px; font-size: 24px; font-weight: 700; }
+#code-input {
+  width: 100%; margin: 20px 0 14px; padding: 15px 16px; font-family: inherit;
+  font-size: 18px; letter-spacing: 2px; text-align: center; text-transform: uppercase;
+  border: 1.5px solid var(--line); border-radius: var(--radius-sm); background: var(--surface);
+}
+#code-input:focus { outline: none; border-color: var(--brand); background: #fff; }
+
+/* Кнопки */
+.btn {
+  font-family: inherit; font-weight: 600; font-size: 16px; cursor: pointer;
+  background: var(--brand); color: #fff; border: none; border-radius: var(--radius-sm);
+  padding: 14px 26px; transition: background .2s, transform .08s, box-shadow .2s;
+}
+.btn:hover { background: var(--brand-dark); }
+.btn:active { transform: translateY(1px); }
+.btn:disabled { opacity: .5; cursor: default; }
+.btn.ghost { background: var(--surface); color: var(--ink); }
+.btn.ghost:hover { background: #e6eaf1; }
+
+/* Приветствие / благодарность */
+.welcome { width: 100%; max-width: 620px; text-align: center; }
+.media { width: 100%; max-width: 340px; margin: 0 auto 22px; }
+.media.media-wide { max-width: 460px; }
+.media img, .media video { width: 100%; height: auto; border-radius: var(--radius); display: block; }
+#welcome-hello { font-size: 22px; font-weight: 700; margin: 4px 0 8px; line-height: 1.35; }
+.principles-title { color: var(--brand-red); font-size: 19px; font-weight: 700; margin: 18px 0 4px; }
+
+/* Принципы — появляются по одному, маркер-ладошка */
+.principles { list-style: none; padding: 0; margin: 14px auto 22px; max-width: 500px; text-align: left; }
+.principles li {
+  display: flex; align-items: center; gap: 12px; padding: 13px 16px; margin: 10px 0;
+  background: var(--bg); border: 1px solid var(--line); border-radius: 12px; box-shadow: var(--shadow);
+}
+.principle-mark { width: 30px; height: auto; flex: 0 0 auto; }
+.appear { animation: fadeUp .5s ease-out both; }
+.reveal-pending { visibility: hidden; opacity: 0; transform: translateY(12px); }
+@keyframes fadeUp { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+#start-btn { margin-top: 12px; padding: 15px 40px; font-size: 17px; }
+
+/* ===== Экран вопроса: маскот + карточка ===== */
+.survey-stage {
+  display: flex; align-items: center; justify-content: center; gap: clamp(38px, 4vw, 64px);
+  width: 100%; max-width: 1060px;
+}
+.survey-stage.side-right { flex-direction: row-reverse; }
+/* Размер маскота адаптивный, но ограничен по ОБЕИМ сторонам, чтобы вертикальные и
+   горизонтальные (landscape) картинки не разносили вёрстку и не давили карточку.
+   Пропорции сохраняются (width/height auto). Крупнее на больших/4K-мониторах. */
+.mascot {
+  width: auto; height: auto;
+  max-height: clamp(240px, 40vh, 440px);
+  max-width:  clamp(220px, 27vw, 360px);
+  object-fit: contain; flex: 0 0 auto;
+  align-self: center; filter: drop-shadow(0 8px 16px rgba(0,60,33,.14));
+  transform: translate(var(--mascot-x, 0), var(--mascot-y, 0)) rotate(var(--mascot-tilt, 0));
+  transform-origin: 50% 78%;
+  transition: transform .3s ease;
+}
+.mascot.mascot-wide { max-width: clamp(250px, 23vw, 330px); }
+.survey-stage.mascot-high .mascot { align-self: flex-start; }
+.survey-stage.mascot-low .mascot { align-self: flex-end; }
+.survey-stage.mascot-center .mascot { align-self: center; }
+
+.q-card {
+  flex: 1 1 auto; max-width: 560px; background: var(--bg); border: 1px solid var(--line);
+  border-radius: var(--radius); box-shadow: var(--shadow); padding: 30px 30px 24px; text-align: center;
+}
+.timer {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 52px; height: 52px; margin-bottom: 14px; font-size: 22px; font-weight: 700;
+  color: var(--brand); border: 3px solid var(--brand); border-radius: 50%;
+}
+.q-text { font-size: 22px; font-weight: 700; line-height: 1.3; margin: 4px 0 22px; }
+.q-body { display: flex; flex-direction: column; gap: 11px; }
+
+.option {
+  font-family: inherit; font-size: 16px; text-align: left; padding: 15px 18px; cursor: pointer;
+  background: var(--bg); border: 1.5px solid var(--line); border-radius: var(--radius-sm);
+  transition: border-color .15s, background .15s;
+}
+.option:hover:not(:disabled) { border-color: var(--brand); }
+.option.selected { border-color: var(--brand); background: var(--brand-tint); }
+.option:disabled { cursor: default; opacity: .85; }
+.review-return { align-self: center; margin-top: 5px; }
+
+.answer-text {
+  width: 100%; padding: 14px 16px; font-size: 16px; font-family: inherit;
+  border: 1.5px solid var(--line); border-radius: var(--radius-sm); resize: vertical; background: var(--surface);
+}
+.answer-text:focus { outline: none; border-color: var(--brand); background: #fff; }
+
+.own-wrap { display: flex; flex-direction: column; gap: 10px; }
+.own-toggle { color: var(--muted); }
+.own-toggle.selected { color: var(--ink); }
+
+.survey-nav { display: flex; align-items: center; justify-content: space-between; margin-top: 20px; min-height: 40px; }
+.hint { color: var(--muted); font-size: 13px; margin-left: auto; }
+
+/* Благодарность */
+.thanks-text { max-width: 500px; margin: 6px auto 18px; font-size: 16px; line-height: 1.5; font-weight: 700; }
+.thanks-btns { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; margin-top: 6px; }
+#copy-note { text-align: center; margin-top: 12px; }
+
+/* ===== Адаптив ===== */
+@media (max-width: 720px) {
+  .survey-stage, .survey-stage.side-right { flex-direction: column; gap: 8px; }
+  .mascot { width: auto; max-height: 190px; max-width: 70vw; }
+  .mascot.mascot-wide { max-width: 78vw; }
+  .survey-stage.side-left  .mascot { align-self: flex-start !important; }
+  .survey-stage.side-right .mascot { align-self: flex-end !important; }
+  .q-card { padding: 24px 20px 20px; }
+  .q-text { font-size: 20px; }
+}

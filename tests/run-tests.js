@@ -19,6 +19,14 @@ class MockSheet {
         while (sheet.values.length < row) sheet.values.push([]);
         sheet.values[row - 1][col - 1] = value;
       },
+      setValues(values) {
+        for (let r = 0; r < rows; r += 1) {
+          while (sheet.values.length < row + r) sheet.values.push([]);
+          for (let c = 0; c < cols; c += 1) {
+            sheet.values[row - 1 + r][col - 1 + c] = values[r][c];
+          }
+        }
+      },
     };
   }
   getLastColumn() { return Math.max(0, ...this.values.map((row) => row.length)); }
@@ -111,10 +119,26 @@ function testBackendLifecycle() {
   assert.equal(incomplete.reason, 'incomplete');
   assert.equal(employeeUsage(sheets), 'Частично');
 
-  for (const id of ids.slice(1)) {
-    const saved = context.saveAnswer({ id: 1, code: 'TOKEN-1', questionId: id, answer: 'A' });
-    assert.equal(saved.ok, true);
-  }
+  const synchronized = context.saveAnswers({
+    id: 1,
+    code: 'TOKEN-1',
+    answers: JSON.stringify(ids.map((questionId) => ({ questionId, answer: 'A' }))),
+  });
+  assert.equal(synchronized.ok, true);
+  assert.equal(synchronized.saved, 32);
+  assert.equal(synchronized.appended, 31, 'batch добавляет только отсутствующие ответы');
+  assert.equal(sheets.Results.values.length, 33);
+
+  const repeated = context.saveAnswers({
+    id: 1,
+    code: 'TOKEN-1',
+    answers: JSON.stringify(ids.map((questionId) => ({ questionId, answer: questionId === ids[0] ? 'B' : 'A' }))),
+  });
+  assert.equal(repeated.ok, true);
+  assert.equal(repeated.appended, 0, 'повтор batch не создаёт дубли');
+  assert.equal(repeated.updated, 1, 'изменённый ответ обновляется на месте');
+  assert.equal(sheets.Results.values.length, 33);
+  assert.equal(sheets.Results.values[1][2], 'B');
   const complete = context.finish({
     id: 1,
     code: 'TOKEN-1',
@@ -128,6 +152,8 @@ function testBackendLifecycle() {
   assert.equal(employeeUsage(sheets), 'Использован');
   assert.deepEqual(sheets.Employees.values[1].slice(9, 14), [72, 75, 80, 50, 'Энтузиаст']);
   assert.equal(context.validateCode('TOKEN-1').reason, 'used');
+  assert.equal(context.saveAnswer({ id: 1, code: 'TOKEN-1', questionId: ids[0], answer: 'A' }).ok, false);
+  assert.equal(context.saveAnswers({ id: 1, code: 'TOKEN-1', answers: '[]' }).ok, false);
   assert.equal(context.getSurvey({ id: 1, code: 'TOKEN-1' }).error, 'unauthorized');
   assert.equal(context.getQuestionsForEmployee({ id: 1, code: 'TOKEN-1' }).error, 'unauthorized');
 }
@@ -201,6 +227,10 @@ async function testFrontendSaveOrderingAndLayout() {
       saveAnswer(payload) {
         events.push(`save:${payload.questionId}`);
         return new Promise((resolve) => pendingSaves.push(() => { events.push(`saved:${payload.questionId}`); resolve({ ok: true }); }));
+      },
+      saveAnswers(payload) {
+        events.push(`sync:${payload.answers.length}`);
+        return Promise.resolve({ ok: true });
       },
       finish() { events.push('finish'); return Promise.resolve({ ok: true }); },
     },
@@ -277,7 +307,74 @@ async function testFrontendSaveOrderingAndLayout() {
   pendingSaves.shift()();
   await flush();
   await flush();
-  assert.deepEqual(events, ['save:511', 'saved:511', 'save:411', 'saved:411', 'finish', 'thanks']);
+  assert.deepEqual(events, ['save:511', 'saved:511', 'save:411', 'saved:411', 'sync:2', 'finish', 'thanks']);
+}
+
+async function testFrontendBatchRecoveryAfterSaveFailure() {
+  const ids = ['q-body', 'q-hint', 'q-timer', 'back-btn', 'progress', 'progress-fill', 'q-text', 'q-mascot', 'screen-survey'];
+  const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement()]));
+  const stage = new FakeElement();
+  const storage = new Map();
+  const events = [];
+  const recoveryConsole = Object.assign({}, console, { warn() {} });
+  const windowObject = {
+    CONFIG: {
+      progressKey: 'recovery-progress',
+      blocks: [{ id: 'self', timed: false }, { id: 'security', timed: false }],
+      selfScore: { 'level-0': 0 },
+      portrait: { dimensions: {}, scores: {}, thresholds: [] },
+    },
+    API: {
+      saveAnswer(payload) {
+        events.push(`save:${payload.questionId}`);
+        return Promise.resolve({ ok: false });
+      },
+      saveAnswers(payload) {
+        events.push(`sync:${payload.answers.length}`);
+        return Promise.resolve({ ok: true });
+      },
+      finish() { events.push('finish'); return Promise.resolve({ ok: true }); },
+    },
+    App: { showThanks() { events.push('thanks'); } },
+  };
+  windowObject.window = windowObject;
+
+  const context = vm.createContext({
+    window: windowObject,
+    API: windowObject.API,
+    App: windowObject.App,
+    document: {
+      getElementById: (id) => elements[id],
+      querySelector: (selector) => selector === '.survey-stage' ? stage : null,
+      querySelectorAll: (selector) => selector === '.screen' ? [elements['screen-survey']] : [],
+      createElement: () => new FakeElement(),
+    },
+    localStorage: {
+      getItem: (key) => storage.get(key) ?? null,
+      setItem: (key, value) => storage.set(key, value),
+      removeItem: (key) => storage.delete(key),
+    },
+    console: recoveryConsole,
+    Date,
+    Promise,
+    setInterval,
+    clearInterval,
+  });
+  vm.runInContext(fs.readFileSync(path.join(root, 'js', 'survey.js'), 'utf8'), context);
+
+  const questions = [
+    { id: '511', block: 'self', type: 'self', text: 'Вопрос 1', options: [{ key: 'A', text: 'Ответ 1', tag: 'level-0' }] },
+    { id: '411', block: 'security', type: 'profile', text: 'Вопрос 2', options: [{ key: 'B', text: 'Ответ 2' }] },
+  ];
+  windowObject.Survey.start({ id: 1, code: 'RECOVERY', fio: 'Тест' }, questions);
+  elements['q-body'].children[0].onclick();
+  elements['q-body'].children[0].onclick();
+  await flush();
+  await flush();
+  await flush();
+
+  assert.deepEqual(events, ['save:511', 'sync:2', 'finish', 'thanks']);
+  assert.equal(events.includes('save:411'), false, 'после первой ошибки остальные одиночные запросы пропускаются');
 }
 
 function testKnowledgeReviewNavigation() {
@@ -297,7 +394,11 @@ function testKnowledgeReviewNavigation() {
       selfScore: {},
       portrait: { dimensions: {}, scores: {}, thresholds: [] },
     },
-    API: { saveAnswer: () => Promise.resolve({ ok: true }), finish: () => Promise.resolve({ ok: true }) },
+    API: {
+      saveAnswer: () => Promise.resolve({ ok: true }),
+      saveAnswers: () => Promise.resolve({ ok: true }),
+      finish: () => Promise.resolve({ ok: true }),
+    },
     App: { showThanks() {} },
   };
   windowObject.window = windowObject;
@@ -382,15 +483,16 @@ function testProductionConfig() {
 
   const sandbox = { window: {} };
   vm.runInNewContext(config, sandbox);
-  vm.runInNewContext(fs.readFileSync(path.join(root, 'js', 'questions.js'), 'utf8'), sandbox);
   const profile = sandbox.window.CONFIG.portrait;
-  const questions = new Map(sandbox.window.DEMO_QUESTIONS.map((q) => [q.id, q]));
+  const profileOptions = JSON.parse(fs.readFileSync(
+    path.join(root, 'tests', 'fixtures', 'profile-options.json'),
+    'utf8',
+  ));
   const dimensionQuestionIds = { adoption: new Set(), interest: new Set(), safety: new Set() };
 
   Object.entries(profile.scores).forEach(([questionId, byAnswer]) => {
-    const question = questions.get(questionId);
-    assert.ok(question, `веса ссылаются на существующий вопрос ${questionId}`);
-    const optionKeys = new Set(question.options.map((option) => option.key));
+    const optionKeys = new Set(profileOptions[questionId] || []);
+    assert.ok(optionKeys.size, `веса ссылаются на известный вопрос ${questionId}`);
     Object.entries(byAnswer).forEach(([answer, scores]) => {
       assert.ok(optionKeys.has(answer), `вес ${questionId}/${answer} ссылается на существующий вариант`);
       Object.entries(scores).forEach(([dimension, score]) => {
@@ -425,14 +527,15 @@ function testWelcomeAndMascotLayoutGuards() {
   assert.match(styles, /\.mascot\.mascot-wide\s*\{/);
   assert.match(survey, /naturalWidth > mascot\.naturalHeight \* 1\.35/);
   assert.match(html, /rel="icon" href="data:,"/);
-  assert.match(html, /js\/api\.js\?v=20260713-knowledge-review/);
-  assert.match(html, /js\/app\.js\?v=20260713-knowledge-review/);
+  assert.match(html, /js\/api\.js\?v=20260714-save-recovery/);
+  assert.match(html, /js\/app\.js\?v=20260714-save-recovery/);
   assert.doesNotMatch(html, /js\/questions\.js/, 'production HTML не должен публиковать офлайн-копию вопросов');
 }
 
 (async () => {
   testBackendLifecycle();
   await testFrontendSaveOrderingAndLayout();
+  await testFrontendBatchRecoveryAfterSaveFailure();
   testKnowledgeReviewNavigation();
   testRestartButtonRemoved();
   testProductionConfig();

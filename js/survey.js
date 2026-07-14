@@ -178,8 +178,11 @@ window.Survey = (function () {
     // Интерфейс не ждёт медленный Apps Script. Запросы всё равно идут строго
     // по одному и finish() ждёт окончания всей очереди перед финализацией.
     saveQueue = saveQueue
-      .then(() => API.saveAnswer(payload))
+      // После первой ошибки не отправляем оставшиеся десятки запросов в уже
+      // перегруженный Apps Script. Все ответы восстановит batch-синхронизация.
+      .then(() => saveError ? { ok: false, deferred: true } : API.saveAnswer(payload))
       .then((saved) => {
+        if (saved && saved.deferred) return;
         if (!saved || !saved.ok) throw new Error('Ответ ' + q.id + ' не сохранён');
       })
       .catch((error) => {
@@ -225,13 +228,27 @@ window.Survey = (function () {
     el('back-btn').classList.add('hidden');
     el('q-hint').textContent = 'Сохраняем ответы…';
     await saveQueue;
-    if (saveError) {
+    // Локальное состояние — источник восстановления. Одним идемпотентным
+    // запросом досылаем все ответы, включая заблокированные вопросы знаний.
+    const synced = await API.saveAnswers({
+      id: state.user.id,
+      code: state.user.code,
+      answers: state.questions.map((q) => {
+        const answer = state.answers[q.id] || {};
+        return {
+          questionId: q.id,
+          answer: answer.own != null ? answer.own : answer.value,
+        };
+      }),
+    });
+    if (!synced || !synced.ok) {
       submitting = false;
       setProgress(state.index / state.questions.length);
       el('back-btn').classList.remove('hidden');
-      el('q-hint').textContent = 'Не все ответы сохранились. Проверьте соединение и обновите страницу для продолжения.';
+      el('q-hint').textContent = 'Не все ответы сохранились. Проверьте соединение и повторите последний ответ.';
       return;
     }
+    saveError = null;
     const res = computeResults();
     const saved = await API.finish({ id: state.user.id, code: state.user.code, results: res });
     if (!saved || !saved.ok) {

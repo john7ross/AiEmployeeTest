@@ -7,13 +7,13 @@ window.API = (function () {
   const C = window.CONFIG;
   let jsonpSeq = 0;
 
-  function jsonp(params) {
+  function jsonp(params, timeoutMs) {
     return new Promise((resolve, reject) => {
       if (!C.API_URL) return reject(new Error('API_URL не задан'));
       const cb = '__survey_cb_' + (++jsonpSeq) + '_' + Date.now();
       const url = C.API_URL + '?' + new URLSearchParams(Object.assign({}, params, { callback: cb })).toString();
       const script = document.createElement('script');
-      const timer = setTimeout(() => { cleanup(); reject(new Error('Таймаут запроса')); }, 30000);
+      const timer = setTimeout(() => { cleanup(); reject(new Error('Таймаут запроса')); }, timeoutMs || 30000);
       function cleanup() { clearTimeout(timer); delete window[cb]; if (script.parentNode) script.parentNode.removeChild(script); }
       window[cb] = (data) => { cleanup(); resolve(data); };
       script.onerror = () => { cleanup(); reject(new Error('Ошибка сети')); };
@@ -54,11 +54,17 @@ window.API = (function () {
       .catch((e) => { console.warn('saveAnswer failed', e); return { ok: false }; });
   }
 
+  // --- Идемпотентная финальная синхронизация всех локальных ответов. ---
+  // Нужна для восстановления после таймаута одного из фоновых saveAnswer.
+  function saveAnswers(payload) {
+    if (C.DEMO_MODE) { console.log('[demo] saveAnswers', payload); return Promise.resolve({ ok: true }); }
+    return writeWithRetry(Object.assign({ action: 'saveAnswers' }, serialize(payload)));
+  }
+
   // --- Финализация: внутренние итоги (процент, самооценка, портрет) в строку сотрудника. ---
   function finish(payload) {
     if (C.DEMO_MODE) { console.log('[demo] finish', payload); return Promise.resolve({ ok: true }); }
-    return jsonp(Object.assign({ action: 'finish' }, serialize(payload)))
-      .catch((e) => { console.warn('finish failed', e); return { ok: false }; });
+    return writeWithRetry(Object.assign({ action: 'finish' }, serialize(payload)));
   }
 
   function serialize(p) {
@@ -73,5 +79,21 @@ window.API = (function () {
       return jsonp(params);
     }
   }
-  return { validateCode, getSurvey, saveAnswer, finish };
+  // Batch-синхронизация и finish идемпотентны, поэтому один повтор после
+  // сетевого таймаута безопаснее, чем оставлять токен в состоянии «Частично».
+  async function writeWithRetry(params) {
+    try {
+      const first = await jsonp(params, 60000);
+      if (first && first.ok === true) return first;
+      throw new Error(first && (first.reason || first.error) || 'Запись отклонена');
+    } catch (firstError) {
+      console.warn('Write request failed, retrying once', firstError);
+      try { return await jsonp(params, 60000); }
+      catch (secondError) {
+        console.warn('Write request failed', secondError);
+        return { ok: false };
+      }
+    }
+  }
+  return { validateCode, getSurvey, saveAnswer, saveAnswers, finish };
 })();

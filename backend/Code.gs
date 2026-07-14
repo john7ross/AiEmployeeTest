@@ -24,6 +24,7 @@ function doGet(e) {
       case 'getSurvey':    out = getSurvey(p); break;
       case 'getQuestions': out = getQuestionsForEmployee(p); break;
       case 'saveAnswer':   out = saveAnswer(p); break;
+      case 'saveAnswers':  out = saveAnswers(p); break;
       case 'finish':       out = finish(p); break;
       default:             out = { error: 'unknown_action' };
     }
@@ -202,11 +203,66 @@ function getQuestions() {
 function saveAnswer(p) {
   var lock = LockService.getScriptLock(); lock.waitLock(10000);
   try {
-    if (!hasEmployeeCredentials(p.id, p.code)) return { ok: false, reason: 'invalid_credentials' };
+    if (!hasActiveEmployeeCredentials(p.id, p.code)) return { ok: false, reason: 'invalid_credentials' };
     var sh = sheet('Results');
     sh.appendRow([p.id, p.questionId, p.answer == null ? '' : p.answer, new Date()]);
     setUsage(p.id, 'Частично', false);
     return { ok: true };
+  } finally { lock.releaseLock(); }
+}
+
+/* --- Финальная идемпотентная синхронизация локального состояния. --- */
+/* Досылает отсутствующие ответы одним запросом и обновляет изменённые, поэтому
+ * повтор после сетевого таймаута не создаёт новые строки для тех же вопросов. */
+function saveAnswers(p) {
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    if (!hasActiveEmployeeCredentials(p.id, p.code)) return { ok: false, reason: 'invalid_credentials' };
+
+    var incoming;
+    try { incoming = JSON.parse(p.answers || '[]'); }
+    catch (err) { return { ok: false, reason: 'invalid_answers' }; }
+    if (!Array.isArray(incoming)) return { ok: false, reason: 'invalid_answers' };
+
+    var allowed = {};
+    getQuestions().forEach(function (q) { allowed[String(q.id)] = true; });
+    var latest = {};
+    incoming.forEach(function (item) {
+      if (!item || item.questionId == null) return;
+      var questionId = String(parseInt(item.questionId, 10));
+      if (!allowed[questionId]) return;
+      latest[questionId] = item.answer == null ? '' : item.answer;
+    });
+
+    var sh = sheet('Results');
+    var data = sh.getDataRange().getValues();
+    var existing = {};
+    for (var r = 1; r < data.length; r++) {
+      if (String(data[r][0]) !== String(p.id)) continue;
+      var existingId = String(parseInt(data[r][1], 10));
+      if (allowed[existingId]) existing[existingId] = r + 1;
+    }
+
+    var now = new Date();
+    var append = [];
+    var updated = 0;
+    Object.keys(latest).forEach(function (questionId) {
+      var row = existing[questionId];
+      if (!row) {
+        append.push([p.id, questionId, latest[questionId], now]);
+        return;
+      }
+      var current = data[row - 1][2] == null ? '' : data[row - 1][2];
+      if (String(current) !== String(latest[questionId])) {
+        sh.getRange(row, 3, 1, 2).setValues([[latest[questionId], now]]);
+        updated += 1;
+      }
+    });
+    if (append.length) {
+      sh.getRange(sh.getLastRow() + 1, 1, append.length, 4).setValues(append);
+    }
+    if (Object.keys(latest).length) setUsage(p.id, 'Частично', false);
+    return { ok: true, saved: Object.keys(latest).length, appended: append.length, updated: updated };
   } finally { lock.releaseLock(); }
 }
 

@@ -192,7 +192,7 @@ class FakeElement {
 async function flush() { await new Promise((resolve) => setImmediate(resolve)); }
 
 async function testFrontendSaveOrderingAndLayout() {
-  const ids = ['q-body', 'q-hint', 'q-timer', 'back-btn', 'progress', 'progress-fill', 'q-text', 'q-mascot', 'screen-survey'];
+  const ids = ['q-body', 'q-hint', 'q-timer', 'back-btn', 'progress', 'progress-fill', 'q-text', 'q-mascot', 'screen-survey', 'knowledge-notice', 'knowledge-notice-ok'];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement()]));
   const stage = new FakeElement();
   const screens = [elements['screen-survey']];
@@ -287,6 +287,11 @@ async function testFrontendSaveOrderingAndLayout() {
   windowObject.Survey.start({ id: 1, code: 'TOKEN', fio: 'Тест' }, questions);
   assert.match(stage.className, /side-left mascot-high/);
   assert.equal(elements['q-mascot'].style.values['--mascot-tilt'], '-5deg');
+  assert.equal(elements['q-mascot'].classList.contains('mascot-loading'), true, 'маскот скрыт до загрузки текущего файла');
+  elements['q-mascot'].naturalWidth = 800;
+  elements['q-mascot'].naturalHeight = 767;
+  elements['q-mascot'].onload();
+  assert.equal(elements['q-mascot'].classList.contains('mascot-loading'), false, 'маскот появляется после загрузки');
 
   elements['q-body'].children[0].onclick();
   assert.equal(elements['q-text'].textContent, 'Вопрос 2', 'переход не должен ждать медленный saveAnswer');
@@ -311,7 +316,7 @@ async function testFrontendSaveOrderingAndLayout() {
 }
 
 async function testFrontendBatchRecoveryAfterSaveFailure() {
-  const ids = ['q-body', 'q-hint', 'q-timer', 'back-btn', 'progress', 'progress-fill', 'q-text', 'q-mascot', 'screen-survey'];
+  const ids = ['q-body', 'q-hint', 'q-timer', 'back-btn', 'progress', 'progress-fill', 'q-text', 'q-mascot', 'screen-survey', 'knowledge-notice', 'knowledge-notice-ok'];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement()]));
   const stage = new FakeElement();
   const storage = new Map();
@@ -378,7 +383,7 @@ async function testFrontendBatchRecoveryAfterSaveFailure() {
 }
 
 function testKnowledgeReviewNavigation() {
-  const ids = ['q-body', 'q-hint', 'q-timer', 'back-btn', 'progress', 'progress-fill', 'q-text', 'q-mascot', 'screen-survey'];
+  const ids = ['q-body', 'q-hint', 'q-timer', 'back-btn', 'progress', 'progress-fill', 'q-text', 'q-mascot', 'screen-survey', 'knowledge-notice', 'knowledge-notice-ok'];
   const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement()]));
   const stage = new FakeElement();
   const storage = new Map();
@@ -389,7 +394,7 @@ function testKnowledgeReviewNavigation() {
       progressKey: 'knowledge-review-progress',
       blocks: [
         { id: 'attitude', timed: false, scored: false },
-        { id: 'knowledge', timed: true, timerSeconds: 10, scored: true },
+        { id: 'knowledge', timed: true, timerSeconds: 20, scored: true },
       ],
       selfScore: {},
       portrait: { dimensions: {}, scores: {}, thresholds: [] },
@@ -434,7 +439,11 @@ function testKnowledgeReviewNavigation() {
   assert.equal(timerStarts, 0, 'в профильном блоке таймер не запускается');
 
   elements['q-body'].children[0].onclick();
+  assert.equal(elements['knowledge-notice'].classList.contains('hidden'), false, 'перед первым вопросом знаний показывается предупреждение');
+  assert.equal(timerStarts, 0, 'таймер не запускается до подтверждения предупреждения');
+  windowObject.Survey.confirmKnowledgeIntro();
   assert.equal(elements['q-text'].textContent, 'Знания 301');
+  assert.equal(elements['knowledge-notice'].classList.contains('hidden'), true);
   assert.equal(timerStarts, 1, 'на текущем вопросе знаний запускается таймер');
 
   windowObject.Survey.back();
@@ -523,13 +532,34 @@ function testWelcomeAndMascotLayoutGuards() {
   const survey = fs.readFileSync(path.join(root, 'js', 'survey.js'), 'utf8');
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   assert.match(app, /li\.className = 'reveal-pending'/, 'принципы должны заранее занимать место');
+  assert.match(app, /knowledge-notice-ok/);
+  assert.match(app, /Survey\.preloadMascots\(survey\.questions\.length\)/);
+  assert.match(app, /preload="auto"/);
   assert.match(styles, /\.reveal-pending\s*\{[^}]*visibility:\s*hidden/s);
+  assert.match(styles, /\.modal-overlay\s*\{/);
+  assert.match(styles, /\.mascot\.mascot-loading\s*\{[^}]*opacity:\s*0/s);
   assert.match(styles, /\.mascot\.mascot-wide\s*\{/);
+  assert.match(survey, /mascotPreloadAhead\s*=\s*4/);
+  assert.match(survey, /preloadMascotRange/);
   assert.match(survey, /naturalWidth > mascot\.naturalHeight \* 1\.35/);
+  assert.match(survey, /confirmKnowledgeIntro/);
   assert.match(html, /rel="icon" href="data:,"/);
-  assert.match(html, /js\/api\.js\?v=20260714-save-recovery/);
-  assert.match(html, /js\/app\.js\?v=20260714-save-recovery/);
+  assert.match(html, /id="knowledge-notice"/);
+  assert.match(html, /Блиц-опрос/);
+  assert.match(html, /js\/api\.js\?v=20260714-inclusive-survey/);
+  assert.match(html, /js\/app\.js\?v=20260714-inclusive-survey/);
   assert.doesNotMatch(html, /js\/questions\.js/, 'production HTML не должен публиковать офлайн-копию вопросов');
+
+  const sandbox = { window: {} };
+  vm.runInNewContext(fs.readFileSync(path.join(root, 'js', 'config.js'), 'utf8'), sandbox);
+  const knowledge = sandbox.window.CONFIG.blocks.find((block) => block.id === 'knowledge');
+  assert.equal(knowledge.timerSeconds, 20);
+  assert.equal(sandbox.window.CONFIG.principleDelayMs, 500);
+
+  for (const file of ['start.mp4', 'end.mp4']) {
+    const bytes = fs.statSync(path.join(root, 'assets', 'media', file)).size;
+    assert.ok(bytes < 3 * 1024 * 1024, `${file} должен оставаться легче 3 МБ`);
+  }
 }
 
 (async () => {

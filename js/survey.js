@@ -4,7 +4,7 @@
  *   self      — самооценка (511): 4 варианта-уровня, тег level-*, без таймера;
  *   profile   — отношение/интерес/безопасность: A/B/C с портретными тегами
  *               + «Свой вариант» (свободный текст, без тега);
- *   knowledge — навыки (301–310): 4 варианта, правильный ответ, таймер 10 сек.
+ *   knowledge — навыки (301–310): 4 варианта, правильный ответ, таймер 20 сек.
  * Плюс: статус-бар, «назад» на один шаг, запись каждого ответа, сбор протокола.
  * ========================================================================= */
 window.Survey = (function () {
@@ -14,6 +14,9 @@ window.Survey = (function () {
   let submitting = false;
   let saveQueue = Promise.resolve();
   let saveError = null;
+  const mascotPreload = [];
+  const mascotPreloadAhead = 4;
+  let mascotRequestId = 0;
 
   const el = (id) => document.getElementById(id);
   const blockCfg = (id) => C.blocks.find((b) => b.id === id) || {};
@@ -34,7 +37,7 @@ window.Survey = (function () {
   function start(user, questions) {
     // Всегда свежий проход. Без авто-резюма из localStorage: иначе повторный вход
     // по тому же коду показывал вопрос «с середины» (незавершённый прогресс).
-    state = { user, questions, index: 0, frontier: 0, answers: {}, done: false };
+    state = { user, questions, index: 0, frontier: 0, answers: {}, done: false, knowledgeIntroSeen: false };
     resetSaveQueue();
     persist();
     show('screen-survey');
@@ -45,6 +48,11 @@ window.Survey = (function () {
   function render() {
     stopTimer();
     const q = state.questions[state.index];
+    if (needsKnowledgeIntro(q)) {
+      showKnowledgeIntro();
+      return;
+    }
+    el('knowledge-notice').classList.add('hidden');
     const bc = blockCfg(q.block);
     const answered = state.answers[q.id];
     const isFrontier = state.index === state.frontier;
@@ -54,13 +62,22 @@ window.Survey = (function () {
     const stage = document.querySelector('.survey-stage');
     stage.className = 'survey-stage ' + pos.side + ' ' + pos.align;
     const mascot = el('q-mascot');
+    const requestedMascot = mascotUrl(state.index);
+    const requestId = ++mascotRequestId;
+    mascot.classList.add('mascot-loading');
     const markMascotAspect = () => {
+      if (requestId !== mascotRequestId) return;
       mascot.classList.toggle('mascot-wide', mascot.naturalWidth > mascot.naturalHeight * 1.35);
+      mascot.classList.remove('mascot-loading');
     };
     mascot.classList.remove('mascot-wide');
     mascot.onload = markMascotAspect;
-    mascot.src = 'assets/mascot/' + (state.index + 1) + '.png';
+    mascot.onerror = () => {
+      if (requestId === mascotRequestId) mascot.classList.remove('mascot-loading');
+    };
+    mascot.src = requestedMascot;
     if (mascot.complete && mascot.naturalWidth) markMascotAspect();
+    preloadMascotRange(state.index + 1, mascotPreloadAhead, state.questions.length);
     mascot.style.setProperty('--mascot-x', pos.x);
     mascot.style.setProperty('--mascot-y', pos.y);
     mascot.style.setProperty('--mascot-tilt', pos.tilt);
@@ -75,6 +92,42 @@ window.Survey = (function () {
     const reviewingKnowledge = q.block === 'knowledge' && !!answered && !isFrontier;
     const useTimer = !!bc.timed && !reviewingKnowledge;
     renderBody(q, bc, answered, useTimer, reviewingKnowledge);
+  }
+
+  function mascotUrl(index) {
+    return 'assets/mascot/' + (index + 1) + '.png';
+  }
+
+  function preloadMascotRange(start, count, total) {
+    const end = Math.min(total, start + count);
+    for (let index = Math.max(0, start); index < end; index += 1) {
+      if (mascotPreload[index]) continue;
+      const image = document.createElement('img');
+      image.src = mascotUrl(index);
+      mascotPreload[index] = image;
+    }
+  }
+
+  function preloadMascots(total) {
+    preloadMascotRange(0, mascotPreloadAhead + 1, total);
+  }
+
+  function needsKnowledgeIntro(q) {
+    if (!q || q.block !== 'knowledge' || state.knowledgeIntroSeen) return false;
+    return state.questions.findIndex((item) => item.block === 'knowledge') === state.index;
+  }
+
+  function showKnowledgeIntro() {
+    el('knowledge-notice').classList.remove('hidden');
+    el('knowledge-notice-ok').focus();
+  }
+
+  function confirmKnowledgeIntro() {
+    if (!state || !needsKnowledgeIntro(state.questions[state.index])) return;
+    state.knowledgeIntroSeen = true;
+    persist();
+    el('knowledge-notice').classList.add('hidden');
+    render();
   }
 
   function renderBody(q, bc, answered, useTimer, reviewingKnowledge) {
@@ -379,7 +432,11 @@ window.Survey = (function () {
   function resume(user, questions) {
     const s = getSaved(user);
     if (!s) return start(user, questions);
-    state = { user, questions, index: s.index, frontier: s.frontier, answers: s.answers || {}, done: false };
+    state = {
+      user, questions, index: s.index, frontier: s.frontier,
+      answers: s.answers || {}, done: false,
+      knowledgeIntroSeen: s.knowledgeIntroSeen === true,
+    };
     resetSaveQueue();
     show('screen-survey');
     el('progress').classList.remove('hidden');
@@ -391,5 +448,5 @@ window.Survey = (function () {
     el(id).classList.remove('hidden');
   }
 
-  return { start, back, resume, getSaved, calculateProfile };
+  return { start, back, resume, getSaved, calculateProfile, confirmKnowledgeIntro, preloadMascots };
 })();

@@ -18,6 +18,7 @@ window.App = (function () {
     el('dl-protocol').onclick = downloadProtocol;
     el('copy-prompt').onclick = copyPrompt;
     el('resume-continue').onclick = () => Survey.resume(user, survey.questions);
+    el('knowledge-notice-ok').onclick = () => Survey.confirmKnowledgeIntro();
     el('code-input').focus();
   }
 
@@ -52,6 +53,9 @@ window.App = (function () {
   function showWelcome() {
     show('screen-welcome');
     el('welcome-media').innerHTML = mediaHtml(C.welcomeMedia);
+    // Пока сотрудник смотрит приветствие и принципы, заранее загружаем первые
+    // маскоты. Это не блокирует видео и уменьшает паузу на первых вопросах.
+    Survey.preloadMascots(survey.questions.length);
     // Приветствие — сразу (с плавным появлением)
     const hello = el('welcome-hello');
     hello.textContent = C.welcomeHello;
@@ -64,7 +68,7 @@ window.App = (function () {
     revealWelcome(survey.principles || C.principles);
   }
 
-  // Цепочка с равным интервалом: заголовок → принципы по одному → кнопка «Приступить».
+  // Плавная цепочка с коротким интервалом: заголовок → принципы → кнопка.
   function revealWelcome(list) {
     const d = C.principleDelayMs;
     welcomeTimers.forEach(clearTimeout);
@@ -134,7 +138,7 @@ window.App = (function () {
   // Разметка медиа: img/gif или video (пробелы в имени файла кодируем).
   function mediaHtml(src) {
     const url = encodeURI(src);
-    if (/\.(mp4|webm)$/i.test(src)) return `<video src="${url}" autoplay muted loop playsinline></video>`;
+    if (/\.(mp4|webm)$/i.test(src)) return `<video src="${url}" preload="auto" autoplay muted loop playsinline></video>`;
     return `<img src="${url}" alt="" />`;
   }
 

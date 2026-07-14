@@ -18,7 +18,7 @@ window.CONFIG = {
     { id: 'self',      title: 'Самооценка',          timed: false },
     { id: 'attitude',  title: 'Отношение к ИИ',      timed: false },
     { id: 'interest',  title: 'Интерес к ИИ',        timed: false },
-    { id: 'knowledge', title: 'Навыки и знания',     timed: true, timerSeconds: 10, scored: true },
+    { id: 'knowledge', title: 'Навыки и знания',     timed: true, timerSeconds: 20, scored: true },
     { id: 'security',  title: 'Безопасность и данные', timed: false },
   ],
 
@@ -91,7 +91,7 @@ window.CONFIG = {
     'Не заменяет, а усиливает. ИИ — топливо, твой мозг — машина.',
     'Использовать или нет? Решать тебе.',
   ],
-  principleDelayMs: 800,
+  principleDelayMs: 500,
 
   // Промпт-ФОЛБЭК (основной берётся из таблицы). Сотрудник копирует его и отдаёт
   // ИИ вместе со скачанным протоколом (в протоколе — только вопросы и его ответы).

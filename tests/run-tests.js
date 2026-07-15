@@ -6,7 +6,7 @@ const path = require('node:path');
 const root = path.resolve(__dirname, '..');
 
 class MockSheet {
-  constructor(values) { this.values = values; }
+  constructor(values) { this.values = values; this.writes = []; }
   getDataRange() { return this.getRange(1, 1, this.getLastRow(), this.getLastColumn()); }
   getRange(row, col, rows = 1, cols = 1) {
     const sheet = this;
@@ -18,6 +18,7 @@ class MockSheet {
       setValue(value) {
         while (sheet.values.length < row) sheet.values.push([]);
         sheet.values[row - 1][col - 1] = value;
+        sheet.writes.push({ row, col, values: [[value]] });
       },
       setValues(values) {
         for (let r = 0; r < rows; r += 1) {
@@ -26,6 +27,7 @@ class MockSheet {
             sheet.values[row - 1 + r][col - 1 + c] = values[r][c];
           }
         }
+        sheet.writes.push({ row, col, values: values.map((line) => line.slice()) });
       },
     };
   }
@@ -46,14 +48,22 @@ function questionIds() {
 
 function createBackendContext() {
   const ids = questionIds();
-  const questions = [['ID вопроса', 'Отношение (1)', 'ID вопроса', 'Интерес (2)', 'ID вопроса', 'Навыки (3)']];
+  const questionText = { '511': 'Self', '411': 'Security' };
   for (let i = 0; i < 10; i += 1) {
-    questions.push([101 + i, `A${i}`, 201 + i, `I${i}`, 301 + i, `K${i}`]);
+    questionText[String(101 + i)] = `A${i}`;
+    questionText[String(201 + i)] = `I${i}`;
+    questionText[String(301 + i)] = `K${i}`;
   }
-  questions.push([411, 'Security', '', '', 511, 'Self']);
+  const questions = [['ID вопроса', 'Вопрос', 'Включен']];
+  for (const id of ids) questions.push([Number(id), questionText[id], true]);
+  questions.push([999, 'Скрытый старый вопрос', false]);
 
   const answers = [['ID вопроса', 'Вариант A', 'Вариант B', 'Вариант C', 'Вариант D', 'Номер правильного ответа', 'Тег A', 'Тег B', 'Тег C', 'Тег D']];
-  for (const id of ids) answers.push([Number(id), 'A', 'B', 'C', 'D', id[0] === '3' ? 'A' : '', 'neutral', 'neutral', 'neutral', 'neutral']);
+  for (const id of ids) {
+    const tags = id === '511' ? ['level-0', 'level-1', 'level-2', 'level-3'] : ['neutral', 'neutral', 'neutral', 'neutral'];
+    answers.push([Number(id), 'A', 'B', 'C', 'D', id[0] === '3' ? 'A' : '', ...tags]);
+  }
+  answers.push([999, 'A', 'B', 'C', 'D', '', 'neutral', 'neutral', 'neutral', 'neutral']);
 
   const sheets = {
     Employees: new MockSheet([
@@ -107,8 +117,51 @@ function testBackendLifecycle() {
   const authorizedSurvey = context.getSurvey({ id: 1, code: 'TOKEN-1' });
   assert.equal(authorizedSurvey.ok, true);
   assert.equal(authorizedSurvey.questions.length, 32);
+  assert.deepEqual(JSON.parse(JSON.stringify(authorizedSurvey.questions.map((q) => q.id))), ids, 'порядок берётся из строк Questions');
+  assert.equal(authorizedSurvey.questions[0].type, 'self', 'теги level-* определяют самооценку');
+  assert.equal(authorizedSurvey.questions.find((q) => q.id === '301').type, 'knowledge');
+  assert.equal(authorizedSurvey.questions.some((q) => q.id === '999'), false, 'снятый флажок исключает вопрос');
   assert.equal(context.getQuestionsForEmployee({}).error, 'unauthorized');
   assert.equal(context.getQuestionsForEmployee({ id: 1, code: 'TOKEN-1' }).questions.length, 32);
+
+  const dynamic = createBackendContext();
+  dynamic.sheets.Questions.values[2][2] = false; // 101 выключен
+  dynamic.sheets.Questions.values.push(['NEW-A', 'Новый обычный вопрос', true]);
+  dynamic.sheets.Answers.values.push(['NEW-A', 'Да', 'Нет', '', '', '', 'neutral', 'neutral', '', '']);
+  dynamic.sheets.Questions.values.push([901, 'Новый вопрос со знанием', true]);
+  dynamic.sheets.Answers.values.push([901, 'A', 'B', 'C', 'D', 'D', '', '', '', '']);
+  const dynamicQuestions = dynamic.context.getQuestions();
+  assert.equal(dynamicQuestions.some((q) => q.id === '101'), false);
+  assert.equal(dynamicQuestions.at(-2).id, 'NEW-A');
+  assert.equal(dynamicQuestions.at(-2).type, 'profile');
+  assert.equal(dynamicQuestions.at(-1).id, '901');
+  assert.equal(dynamicQuestions.at(-1).type, 'knowledge', 'правильный ответ определяет блиц независимо от префикса ID');
+  dynamic.sheets.Questions.values[0][2] = 'Включить';
+  assert.equal(dynamic.context.getQuestions().length, dynamicQuestions.length, 'поддерживается заголовок Включить');
+
+  const nextSurvey = createBackendContext();
+  nextSurvey.sheets.Questions.values.slice(1).forEach((row) => { row[2] = false; });
+  nextSurvey.sheets.Questions.values.push(['NEXT-1', 'Новый вопрос 1', true], ['NEXT-2', 'Новый вопрос 2', true]);
+  nextSurvey.sheets.Answers.values.push(
+    ['NEXT-1', 'Да', 'Нет', '', '', '', 'neutral', 'neutral', '', ''],
+    ['NEXT-2', 'A', 'B', 'C', 'D', 'D', '', '', '', ''],
+  );
+  const oldResultDate = new Date('2026-01-01T00:00:00Z');
+  nextSurvey.sheets.Results.values.push([1, 511, 'A', oldResultDate]);
+  assert.deepEqual(JSON.parse(JSON.stringify(nextSurvey.context.getQuestions().map((q) => q.id))), ['NEXT-1', 'NEXT-2']);
+  const nextComplete = nextSurvey.context.finish({
+    id: 1, code: 'TOKEN-1',
+    answers: JSON.stringify([{ questionId: 'NEXT-1', answer: 'A' }, { questionId: 'NEXT-2', answer: 'D' }]),
+    results: JSON.stringify({ percentCorrect: 100, selfScore: null, portraitScore: null,
+      adoptionScore: null, interestScore: null, safetyScore: null, portraitLabel: '' }),
+  });
+  assert.equal(nextComplete.ok, true);
+  assert.equal(nextSurvey.sheets.Results.values.length, 4, 'старые Results остаются, новые ID дописываются');
+  assert.deepEqual(nextSurvey.sheets.Results.values[1], [1, 511, 'A', oldResultDate], 'старая строка результата не меняется');
+
+  const emptySurvey = createBackendContext();
+  emptySurvey.sheets.Questions.values.slice(1).forEach((row) => { row[2] = false; });
+  assert.equal(emptySurvey.context.getSurvey({ id: 1, code: 'TOKEN-1' }).error, 'no_active_questions');
 
   const invalidSave = context.saveAnswer({ id: 1, code: 'WRONG', questionId: ids[0], answer: 'A' });
   assert.equal(invalidSave.ok, false);
@@ -161,6 +214,42 @@ function testBackendLifecycle() {
   assert.equal(context.saveAnswers({ id: 1, code: 'TOKEN-1', answers: '[]' }).ok, false);
   assert.equal(context.getSurvey({ id: 1, code: 'TOKEN-1' }).error, 'unauthorized');
   assert.equal(context.getQuestionsForEmployee({ id: 1, code: 'TOKEN-1' }).error, 'unauthorized');
+
+  const atomic = createBackendContext();
+  const atomicAnswers = atomic.ids.map((questionId) => ({ questionId, answer: 'A' }));
+  const atomicResults = {
+    percentCorrect: 80, selfScore: 66, portraitScore: 72,
+    adoptionScore: 75, interestScore: 80, safetyScore: 50,
+    portraitLabel: 'Энтузиаст',
+  };
+  const atomicComplete = atomic.context.finish({
+    id: 1, code: 'TOKEN-1', answers: JSON.stringify(atomicAnswers), results: JSON.stringify(atomicResults),
+  });
+  assert.equal(atomicComplete.ok, true, 'finish сам синхронизирует все локальные ответы');
+  assert.equal(atomic.sheets.Results.values.length, 33);
+  assert.equal(employeeUsage(atomic.sheets), 'Использован');
+  assert.deepEqual(atomic.sheets.Employees.values[1].slice(9, 14), [72, 75, 80, 50, 'Энтузиаст']);
+  const lastEmployeeWrite = atomic.sheets.Employees.writes.at(-1);
+  assert.equal(lastEmployeeWrite.values[0][0], 'Использован', 'статус записывается последним после итогов');
+  assert.equal(atomic.sheets.Employees.writes.at(-2).values[0].length, 8, 'все итоговые поля пишутся одним batch');
+  const atomicRetry = atomic.context.finish({
+    id: 1, code: 'TOKEN-1', answers: JSON.stringify(atomicAnswers), results: JSON.stringify(atomicResults),
+  });
+  assert.equal(atomicRetry.ok, true, 'повтор после потерянного ответа сервера идемпотентен');
+  assert.equal(atomic.sheets.Results.values.length, 33, 'повтор finish не создаёт дубли ответов');
+
+  const cleared = createBackendContext();
+  cleared.sheets.Employees.values[1].splice(7, 7, 91, 92, 93, 94, 95, 96, 'Старый портрет');
+  const clearedComplete = cleared.context.finish({
+    id: 1, code: 'TOKEN-1',
+    answers: JSON.stringify(cleared.ids.map((questionId) => ({ questionId, answer: 'A' }))),
+    results: JSON.stringify({
+      percentCorrect: 0, selfScore: null, portraitScore: null,
+      adoptionScore: null, interestScore: null, safetyScore: null, portraitLabel: '',
+    }),
+  });
+  assert.equal(clearedComplete.ok, true);
+  assert.deepEqual(cleared.sheets.Employees.values[1].slice(7, 14), [0, '', '', '', '', '', ''], 'новый опрос очищает неприменимые итоги старого');
 }
 
 class FakeClassList {
@@ -204,6 +293,7 @@ async function testFrontendSaveOrderingAndLayout() {
   const storage = new Map();
   const pendingSaves = [];
   const events = [];
+  let protocolText = '';
 
   const windowObject = {
     CONFIG: {
@@ -233,13 +323,11 @@ async function testFrontendSaveOrderingAndLayout() {
         events.push(`save:${payload.questionId}`);
         return new Promise((resolve) => pendingSaves.push(() => { events.push(`saved:${payload.questionId}`); resolve({ ok: true }); }));
       },
-      saveAnswers(payload) {
-        events.push(`sync:${payload.answers.length}`);
-        return Promise.resolve({ ok: true });
-      },
-      finish() { events.push('finish'); return Promise.resolve({ ok: true }); },
+      saveAnswers() { throw new Error('отдельный saveAnswers перед finish больше не нужен'); },
+      finish(payload) { events.push(`finish:${payload.answers.length}`); return Promise.resolve({ ok: true }); },
+      validateCode() { throw new Error('подтверждение не нужно при успешном finish'); },
     },
-    App: { showThanks() { events.push('thanks'); } },
+    App: { showThanks(text) { protocolText = text; events.push('thanks'); } },
   };
   windowObject.window = windowObject;
 
@@ -287,7 +375,7 @@ async function testFrontendSaveOrderingAndLayout() {
 
   const questions = [
     { id: '511', block: 'self', type: 'self', text: 'Вопрос 1', options: [{ key: 'A', text: 'Ответ 1', tag: 'level-0' }] },
-    { id: '411', block: 'security', type: 'profile', text: 'Вопрос 2', options: [{ key: 'B', text: 'Ответ 2', tag: 'neutral' }] },
+    { id: 'NEW-SURVEY-Q', block: 'profile', type: 'profile', text: 'Новый вопрос из таблицы', options: [{ key: 'B', text: 'Новый ответ из таблицы', tag: 'neutral' }] },
   ];
   windowObject.Survey.start({ id: 1, code: 'TOKEN', fio: 'Тест' }, questions);
   assert.match(stage.className, /side-left mascot-high/);
@@ -299,25 +387,37 @@ async function testFrontendSaveOrderingAndLayout() {
   assert.equal(elements['q-mascot'].classList.contains('mascot-loading'), false, 'маскот появляется после загрузки');
 
   elements['q-body'].children[0].onclick();
-  assert.equal(elements['q-text'].textContent, 'Вопрос 2', 'переход не должен ждать медленный saveAnswer');
+  assert.equal(elements['q-text'].textContent, 'Новый вопрос из таблицы', 'переход не должен ждать медленный saveAnswer');
   assert.match(stage.className, /side-right mascot-low/);
-  const savedProgress = windowObject.Survey.getSaved({ code: 'TOKEN' });
+  const savedProgress = windowObject.Survey.getSaved({ code: 'TOKEN' }, questions);
   assert.equal(savedProgress.index, 1, 'прогресс должен сохранять текущий вопрос независимо от кеша вопросов');
   assert.equal(savedProgress.answers['511'].value, 'A', 'прогресс должен сохранять уже выбранные ответы');
+  assert.equal(windowObject.Survey.getSaved({ code: 'TOKEN' }, [{ id: 'NEW' }]), null, 'старый прогресс не переносится на новый набор вопросов');
   await flush();
   assert.deepEqual(events, ['save:511']);
 
   elements['q-body'].children[0].onclick();
-  assert.equal(events.includes('finish'), false, 'finish не должен обгонять последний saveAnswer');
-  assert.equal(elements['q-hint'].textContent, 'Сохраняем ответы…');
+  assert.equal(elements['q-hint'].textContent, 'Завершаем опрос…');
+  await flush();
+  await flush();
+  assert.deepEqual(events, ['save:511', 'finish:2', 'thanks'], 'атомарный finish не ждёт длинную очередь одиночных записей');
+  assert.match(protocolText, /2\. Новый вопрос из таблицы\nОтвет: Новый ответ из таблицы/, 'новые вопросы и ответы из текущего набора попадают в протокол');
+  assert.equal(pendingSaves.length, 1, 'в полёте остаётся не более одного фонового запроса');
   pendingSaves.shift()();
   await flush();
-  assert.deepEqual(events, ['save:511', 'saved:511', 'save:411']);
-  assert.equal(events.includes('finish'), false, 'finish ждёт всю последовательную очередь');
-  pendingSaves.shift()();
+  assert.deepEqual(events, ['save:511', 'finish:2', 'thanks', 'saved:511']);
+  assert.equal(events.includes('save:NEW-SURVEY-Q'), false, 'после начала финализации новые одиночные записи не запускаются');
+
+  const resumeUser = { id: 2, code: 'TOKEN-RESUME', fio: 'Повторный вход' };
+  storage.set('test-progress:TOKEN-RESUME', JSON.stringify({
+    user: resumeUser, questions, index: 1, frontier: 1, done: false,
+    answers: { '511': { value: 'A' }, 'NEW-SURVEY-Q': { value: 'B' } },
+  }));
+  const beforeResume = events.length;
+  windowObject.Survey.resume(resumeUser, questions);
   await flush();
   await flush();
-  assert.deepEqual(events, ['save:511', 'saved:511', 'save:411', 'saved:411', 'sync:2', 'finish', 'thanks']);
+  assert.deepEqual(events.slice(beforeResume), ['finish:2', 'thanks'], 'полный локальный прогресс финализируется без повторного ответа 411');
 }
 
 async function testFrontendBatchRecoveryAfterSaveFailure() {
@@ -339,11 +439,9 @@ async function testFrontendBatchRecoveryAfterSaveFailure() {
         events.push(`save:${payload.questionId}`);
         return Promise.resolve({ ok: false });
       },
-      saveAnswers(payload) {
-        events.push(`sync:${payload.answers.length}`);
-        return Promise.resolve({ ok: true });
-      },
-      finish() { events.push('finish'); return Promise.resolve({ ok: true }); },
+      saveAnswers() { throw new Error('отдельный saveAnswers перед finish больше не нужен'); },
+      finish(payload) { events.push(`finish:${payload.answers.length}`); return Promise.resolve({ ok: false }); },
+      validateCode() { events.push('validate'); return Promise.resolve({ valid: false, reason: 'used' }); },
     },
     App: { showThanks() { events.push('thanks'); } },
   };
@@ -378,12 +476,13 @@ async function testFrontendBatchRecoveryAfterSaveFailure() {
   ];
   windowObject.Survey.start({ id: 1, code: 'RECOVERY', fio: 'Тест' }, questions);
   elements['q-body'].children[0].onclick();
+  await flush();
   elements['q-body'].children[0].onclick();
   await flush();
   await flush();
   await flush();
 
-  assert.deepEqual(events, ['save:511', 'sync:2', 'finish', 'thanks']);
+  assert.deepEqual(events, ['save:511', 'finish:2', 'validate', 'thanks']);
   assert.equal(events.includes('save:411'), false, 'после первой ошибки остальные одиночные запросы пропускаются');
 }
 
@@ -486,6 +585,14 @@ function testKnowledgeReviewNavigation() {
   elements['q-body'].children[0].onclick();
   assert.equal(elements['q-text'].textContent, 'Знания 302');
   assert.equal(timerStarts, 0, 'таймер остаётся выключенным на следующем вопросе знаний');
+
+  const manyQuestions = Array.from({ length: 33 }, (_, i) => ({
+    id: `M${i + 1}`, block: 'attitude', type: 'profile', text: `Вопрос ${i + 1}`,
+    options: [{ key: 'A', text: 'Ответ A' }],
+  }));
+  windowObject.Survey.start({ id: 3, code: 'MANY', fio: 'Много вопросов', timerEnabled: false }, manyQuestions);
+  for (let i = 0; i < 32; i += 1) elements['q-body'].children[0].onclick();
+  assert.equal(elements['q-mascot'].src, 'assets/mascot/1.png', 'после 32 вопросов маскоты циклически повторяются');
 }
 
 function testRestartButtonRemoved() {
@@ -563,8 +670,9 @@ function testWelcomeAndMascotLayoutGuards() {
   assert.match(html, /id="knowledge-notice"/);
   assert.match(html, /Блиц-опрос/);
   assert.match(app, /timerEnabled:\s*res\.timerEnabled !== false/);
-  assert.match(html, /js\/api\.js\?v=20260715-employee-timer/);
-  assert.match(html, /js\/app\.js\?v=20260715-employee-timer/);
+  assert.match(app, /Ошибка настройки опроса/);
+  assert.match(html, /js\/api\.js\?v=20260715-dynamic-questions/);
+  assert.match(html, /js\/app\.js\?v=20260715-dynamic-questions/);
   assert.doesNotMatch(html, /js\/questions\.js/, 'production HTML не должен публиковать офлайн-копию вопросов');
 
   const sandbox = { window: {} };

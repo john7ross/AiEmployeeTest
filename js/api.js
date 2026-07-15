@@ -38,7 +38,7 @@ window.API = (function () {
     }
     if (!user || user.id == null || !user.code) throw new Error('Не заданы данные доступа к опросу');
     const res = await readWithRetry({ action: 'getSurvey', id: user.id, code: user.code });
-    if (!res || res.ok !== true) throw new Error('Доступ к опросу не подтверждён');
+    if (!res || res.ok !== true) throw new Error(res && res.error || 'Доступ к опросу не подтверждён');
     const survey = {
       questions: res.questions || [],
       principles: res.principles || C.principles,

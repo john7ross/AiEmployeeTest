@@ -40,11 +40,18 @@ window.App = (function () {
       // Старый backend без поля timerEnabled сохраняет прежнее поведение.
       user = { id: res.id, fio: res.fio, code, timerEnabled: res.timerEnabled !== false };
       survey = await API.getSurvey(user);
-      if (Survey.getSaved(user)) show('screen-resume');
+      if (Survey.getSaved(user, survey.questions)) show('screen-resume');
       else showWelcome();
     } catch (e) {
       console.error('Login failed', e);
-      err.textContent = 'Не удалось связаться с сервером. Попробуйте ещё раз.';
+      const message = String(e && e.message || '');
+      if (message === 'no_active_questions') {
+        err.textContent = 'В таблице нет включённых вопросов.';
+      } else if (/Дублирующийся ID|Нет строки Answers|Нет вариантов ответа/.test(message)) {
+        err.textContent = 'Ошибка настройки опроса: ' + message.replace(/^Error:\s*/, '');
+      } else {
+        err.textContent = 'Не удалось связаться с сервером. Попробуйте ещё раз.';
+      }
       err.classList.remove('hidden');
     } finally {
       el('code-submit').disabled = false;

@@ -9,7 +9,7 @@
  *               Балл самооценки | Средний балл на основе ответов |
  *               Принятие/готовность использовать ИИ | Интерес и инициативность |
  *               Безопасность и ответственность | Портрет | Таймер
- *   Questions : ID(1)|Отношение(1) | ID(2)|Интерес(2) | ID(3)|Навыки(3)  (пары колонок)
+ *   Questions : ID вопроса | Вопрос | Включен
  *   Answers   : ID вопроса | Вариант A | B | C | D | Номер правильного ответа |
  *               Тег A | Тег B | Тег C | Тег D
  *   Results   : ID пользователя | ID вопроса | Ответ | Дата и время получения  (лог)
@@ -48,6 +48,14 @@ function sheet(name) {
 }
 function header(sh) { return sh.getRange(1, 1, 1, sh.getLastColumn()).getValues()[0]; }
 function colIndex(head, name) { return head.indexOf(name); }
+function normalizeQuestionId(value) {
+  if (value === '' || value == null) return '';
+  var id = String(value).trim();
+  return /^\d+(?:\.0+)?$/.test(id) ? String(parseInt(id, 10)) : id;
+}
+function checked(value) {
+  return value === true || String(value).trim().toLowerCase() === 'true';
+}
 
 function hasEmployeeCredentials(employeeId, code) {
   var sh = sheet('Employees');
@@ -110,13 +118,17 @@ function validateCode(code) {
 /* --- Весь опрос из таблицы: только после повторной проверки ID + токена. --- */
 function getSurvey(p) {
   if (!hasActiveEmployeeCredentials(p.id, p.code)) return { ok: false, error: 'unauthorized' };
-  return { ok: true, questions: getQuestions(), principles: getPrinciples(), prompt: getSetting('prompt') };
+  var questions = getQuestions();
+  if (!questions.length) return { ok: false, error: 'no_active_questions' };
+  return { ok: true, questions: questions, principles: getPrinciples(), prompt: getSetting('prompt') };
 }
 
 /* Старый отдельный action тоже не должен раскрывать вопросы без авторизации. */
 function getQuestionsForEmployee(p) {
   if (!hasActiveEmployeeCredentials(p.id, p.code)) return { ok: false, error: 'unauthorized' };
-  return { ok: true, questions: getQuestions() };
+  var questions = getQuestions();
+  if (!questions.length) return { ok: false, error: 'no_active_questions' };
+  return { ok: true, questions: questions };
 }
 
 /* Принципы — лист Principles, первый столбец (по одному в строке). */
@@ -142,56 +154,66 @@ function getSetting(key) {
 
 /* --- Вопросы: Questions (текст) + Answers (варианты/правильный/теги). --- */
 function getQuestions() {
-  // карта id -> текст из листа Questions (пары колонок 0-1, 2-3, 4-5)
   var qd = sheet('Questions').getDataRange().getValues();
-  var text = {};
+  var qh = qd[0] || [];
+  var iQId = colIndex(qh, 'ID вопроса'), iQText = colIndex(qh, 'Вопрос');
+  var iEnabled = colIndex(qh, 'Включен');
+  if (iEnabled < 0) iEnabled = colIndex(qh, 'Включить');
+  if (iEnabled < 0) iEnabled = colIndex(qh, 'Включено');
+  if (iQId < 0 || iQText < 0) return [];
+  var ordered = [];
+  var seenQuestions = {};
   for (var r = 1; r < qd.length; r++) {
-    [[0, 1], [2, 3], [4, 5]].forEach(function (p) {
-      var id = qd[r][p[0]], t = qd[r][p[1]];
-      if (id !== '' && id != null && t) text[String(parseInt(id, 10))] = String(t).trim();
-    });
+    var questionId = normalizeQuestionId(qd[r][iQId]);
+    var questionText = String(qd[r][iQText] || '').trim();
+    if (!questionId || !questionText) continue;
+    if (seenQuestions[questionId]) throw new Error('Дублирующийся ID вопроса: ' + questionId);
+    seenQuestions[questionId] = true;
+    if (iEnabled >= 0 && !checked(qd[r][iEnabled])) continue;
+    ordered.push({ id: questionId, text: questionText });
   }
 
   var ad = sheet('Answers').getDataRange().getValues();
   var h = ad[0];
   var byId = {};
   for (var i = 1; i < ad.length; i++) {
-    var id = ad[i][0]; if (id === '' || id == null) continue;
-    byId[String(parseInt(id, 10))] = ad[i];
+    var answerId = normalizeQuestionId(ad[i][0]); if (!answerId) continue;
+    if (byId[answerId]) throw new Error('Дублирующийся ID в Answers: ' + answerId);
+    byId[answerId] = ad[i];
   }
-  var iA = 1, iB = 2, iC = 3, iD = 4, iCorr = 5;
+  var iA = colIndex(h, 'Вариант A'), iB = colIndex(h, 'Вариант B'),
+      iC = colIndex(h, 'Вариант C'), iD = colIndex(h, 'Вариант D'),
+      iCorr = colIndex(h, 'Номер правильного ответа');
   var iTA = colIndex(h, 'Тег A'), iTB = colIndex(h, 'Тег B'),
       iTC = colIndex(h, 'Тег C'), iTD = colIndex(h, 'Тег D');
 
-  var order = ['511'];
-  for (var n = 101; n <= 110; n++) order.push(String(n));
-  for (n = 201; n <= 210; n++) order.push(String(n));
-  for (n = 301; n <= 310; n++) order.push(String(n));
-  order.push('411');
-
   var mascot = { attitude: 'neutral', interest: 'happy', knowledge: 'thinking', security: 'thinking', self: 'neutral' };
   function blockOf(id) {
-    return { '1': 'attitude', '2': 'interest', '3': 'knowledge', '4': 'security', '5': 'self' }[id.charAt(0)];
+    return { '1': 'attitude', '2': 'interest', '4': 'security' }[id.charAt(0)] || 'profile';
   }
   function isOwn(s) { return String(s || '').indexOf('вой вариант') >= 0; }
+  function cell(row, index) { return index >= 0 ? row[index] : ''; }
 
   var out = [];
-  order.forEach(function (id) {
-    var row = byId[id]; if (!row) return;
-    var blk = blockOf(id);
-    var q = { id: id, block: blk, mascot: mascot[blk], text: text[id] || '' };
+  ordered.forEach(function (source) {
+    var row = byId[source.id];
+    if (!row) throw new Error('Нет строки Answers для включенного вопроса: ' + source.id);
     var opts = [
-      { key: 'A', text: row[iA], tag: iTA >= 0 ? row[iTA] : '' },
-      { key: 'B', text: row[iB], tag: iTB >= 0 ? row[iTB] : '' },
-      { key: 'C', text: row[iC], tag: iTC >= 0 ? row[iTC] : '' },
-      { key: 'D', text: row[iD], tag: iTD >= 0 ? row[iTD] : '' },
+      { key: 'A', text: cell(row, iA), tag: cell(row, iTA) },
+      { key: 'B', text: cell(row, iB), tag: cell(row, iTB) },
+      { key: 'C', text: cell(row, iC), tag: cell(row, iTC) },
+      { key: 'D', text: cell(row, iD), tag: cell(row, iTD) },
     ];
-    if (blk === 'knowledge') {
+    var correct = String(cell(row, iCorr) || '').trim();
+    var selfTagged = opts.some(function (o) { return String(o.tag || '').indexOf('level-') === 0; });
+    var blk = correct ? 'knowledge' : (selfTagged ? 'self' : blockOf(source.id));
+    var q = { id: source.id, block: blk, mascot: mascot[blk] || 'neutral', text: source.text };
+    if (correct) {
       q.type = 'knowledge';
       q.options = opts.filter(function (o) { return o.text !== '' && o.text != null; })
                       .map(function (o) { return { key: o.key, text: String(o.text) }; });
-      q.correct = String(row[iCorr]).trim();
-    } else if (blk === 'self') {
+      q.correct = correct;
+    } else if (selfTagged) {
       q.type = 'self';
       q.options = opts.filter(function (o) { return o.text !== '' && o.text != null; })
                       .map(function (o) { return { key: o.key, text: String(o.text), tag: String(o.tag || '') }; });
@@ -201,6 +223,7 @@ function getQuestions() {
       q.options = opts.filter(function (o) { return o.text !== '' && o.text != null && !isOwn(o.text); })
                       .map(function (o) { return { key: o.key, text: String(o.text), tag: String(o.tag || '') }; });
     }
+    if (!q.options.length && !q.allowOwn) throw new Error('Нет вариантов ответа для включенного вопроса: ' + source.id);
     out.push(q);
   });
   return out;
@@ -225,52 +248,57 @@ function saveAnswers(p) {
   var lock = LockService.getScriptLock(); lock.waitLock(30000);
   try {
     if (!hasActiveEmployeeCredentials(p.id, p.code)) return { ok: false, reason: 'invalid_credentials' };
-
-    var incoming;
-    try { incoming = JSON.parse(p.answers || '[]'); }
-    catch (err) { return { ok: false, reason: 'invalid_answers' }; }
-    if (!Array.isArray(incoming)) return { ok: false, reason: 'invalid_answers' };
-
-    var allowed = {};
-    getQuestions().forEach(function (q) { allowed[String(q.id)] = true; });
-    var latest = {};
-    incoming.forEach(function (item) {
-      if (!item || item.questionId == null) return;
-      var questionId = String(parseInt(item.questionId, 10));
-      if (!allowed[questionId]) return;
-      latest[questionId] = item.answer == null ? '' : item.answer;
-    });
-
-    var sh = sheet('Results');
-    var data = sh.getDataRange().getValues();
-    var existing = {};
-    for (var r = 1; r < data.length; r++) {
-      if (String(data[r][0]) !== String(p.id)) continue;
-      var existingId = String(parseInt(data[r][1], 10));
-      if (allowed[existingId]) existing[existingId] = r + 1;
-    }
-
-    var now = new Date();
-    var append = [];
-    var updated = 0;
-    Object.keys(latest).forEach(function (questionId) {
-      var row = existing[questionId];
-      if (!row) {
-        append.push([p.id, questionId, latest[questionId], now]);
-        return;
-      }
-      var current = data[row - 1][2] == null ? '' : data[row - 1][2];
-      if (String(current) !== String(latest[questionId])) {
-        sh.getRange(row, 3, 1, 2).setValues([[latest[questionId], now]]);
-        updated += 1;
-      }
-    });
-    if (append.length) {
-      sh.getRange(sh.getLastRow() + 1, 1, append.length, 4).setValues(append);
-    }
-    if (Object.keys(latest).length) setUsage(p.id, 'Частично', false);
-    return { ok: true, saved: Object.keys(latest).length, appended: append.length, updated: updated };
+    return syncEmployeeAnswers(p.id, p.answers, true);
   } finally { lock.releaseLock(); }
+}
+
+/* Вызывается только внутри script lock: один и тот же механизм используется
+ * отдельным recovery-action и атомарной финализацией. */
+function syncEmployeeAnswers(employeeId, rawAnswers, markPartial) {
+  var incoming;
+  try { incoming = JSON.parse(rawAnswers || '[]'); }
+  catch (err) { return { ok: false, reason: 'invalid_answers' }; }
+  if (!Array.isArray(incoming)) return { ok: false, reason: 'invalid_answers' };
+
+  var allowed = {};
+  getQuestions().forEach(function (q) { allowed[String(q.id)] = true; });
+  var latest = {};
+  incoming.forEach(function (item) {
+    if (!item || item.questionId == null) return;
+    var questionId = normalizeQuestionId(item.questionId);
+    if (!allowed[questionId]) return;
+    latest[questionId] = item.answer == null ? '' : item.answer;
+  });
+
+  var sh = sheet('Results');
+  var data = sh.getDataRange().getValues();
+  var existing = {};
+  for (var r = 1; r < data.length; r++) {
+    if (String(data[r][0]) !== String(employeeId)) continue;
+    var existingId = normalizeQuestionId(data[r][1]);
+    if (allowed[existingId]) existing[existingId] = r + 1;
+  }
+
+  var now = new Date();
+  var append = [];
+  var updated = 0;
+  Object.keys(latest).forEach(function (questionId) {
+    var row = existing[questionId];
+    if (!row) {
+      append.push([employeeId, questionId, latest[questionId], now]);
+      return;
+    }
+    var current = data[row - 1][2] == null ? '' : data[row - 1][2];
+    if (String(current) !== String(latest[questionId])) {
+      sh.getRange(row, 3, 1, 2).setValues([[latest[questionId], now]]);
+      updated += 1;
+    }
+  });
+  if (append.length) {
+    sh.getRange(sh.getLastRow() + 1, 1, append.length, 4).setValues(append);
+  }
+  if (markPartial !== false && Object.keys(latest).length) setUsage(employeeId, 'Частично', false);
+  return { ok: true, saved: Object.keys(latest).length, appended: append.length, updated: updated };
 }
 
 function setUsage(employeeId, value, overwriteUsed) {
@@ -295,7 +323,7 @@ function answeredQuestionCount(employeeId, expectedIds) {
   var seen = {};
   for (var r = 1; r < data.length; r++) {
     if (String(data[r][0]) === String(employeeId) && data[r][1] !== '' && data[r][1] != null) {
-      var questionId = String(parseInt(data[r][1], 10));
+      var questionId = normalizeQuestionId(data[r][1]);
       if (expected[questionId]) seen[questionId] = true;
     }
   }
@@ -304,10 +332,17 @@ function answeredQuestionCount(employeeId, expectedIds) {
 
 /* --- Завершение -> «Использован» и сводка только после всех ответов. --- */
 function finish(p) {
-  var lock = LockService.getScriptLock(); lock.waitLock(10000);
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
   try {
     if (!hasEmployeeCredentials(p.id, p.code)) return { ok: false, reason: 'invalid_credentials' };
-    var res = JSON.parse(p.results || '{}');
+    var res;
+    try { res = JSON.parse(p.results || '{}'); }
+    catch (err) { return { ok: false, reason: 'invalid_results' }; }
+    var synced = null;
+    if (p.answers != null && p.answers !== '') {
+      synced = syncEmployeeAnswers(p.id, p.answers, false);
+      if (!synced.ok) return synced;
+    }
     var questions = getQuestions();
     var questionIds = questions.map(function (q) { return q.id; });
     var answered = answeredQuestionCount(p.id, questionIds);
@@ -320,24 +355,38 @@ function finish(p) {
     var data = sh.getDataRange().getValues();
     var h = data[0];
     var iId = colIndex(h, 'ID');
-    var map = {
-      'Использование': 'Использован',
-      'Дата и время прохождения': new Date(),
-      'Процент правильных ответов': res.percentCorrect,
-      'Балл самооценки': res.selfScore,
-      'Средний балл на основе ответов': res.portraitScore,
-      'Принятие/готовность использовать ИИ': res.adoptionScore,
-      'Интерес и инициативность': res.interestScore,
-      'Безопасность и ответственность': res.safetyScore,
-      'Портрет': res.portraitLabel,
-    };
+    var summary = [
+      ['Дата и время прохождения', new Date()],
+      ['Процент правильных ответов', res.percentCorrect],
+      ['Балл самооценки', res.selfScore],
+      ['Средний балл на основе ответов', res.portraitScore],
+      ['Принятие/готовность использовать ИИ', res.adoptionScore],
+      ['Интерес и инициативность', res.interestScore],
+      ['Безопасность и ответственность', res.safetyScore],
+      ['Портрет', res.portraitLabel],
+    ];
+    var iUse = colIndex(h, 'Использование');
+    if (iId < 0 || iUse < 0) return { ok: false, reason: 'employee_columns_missing' };
     for (var r = 1; r < data.length; r++) {
       if (String(data[r][iId]) === String(p.id)) {
-        Object.keys(map).forEach(function (col) {
-          var c = colIndex(h, col);
-          if (c >= 0 && map[col] !== undefined && map[col] !== null) sh.getRange(r + 1, c + 1).setValue(map[col]);
+        var summaryIndexes = summary.map(function (item) { return colIndex(h, item[0]); });
+        var contiguous = summaryIndexes.every(function (c, i) {
+          return c >= 0 && (i === 0 || c === summaryIndexes[0] + i);
         });
-        return { ok: true };
+        if (contiguous) {
+          var summaryValues = summary.map(function (item, i) {
+            return item[1] !== undefined && item[1] !== null ? item[1] : '';
+          });
+          sh.getRange(r + 1, summaryIndexes[0] + 1, 1, summaryValues.length).setValues([summaryValues]);
+        } else {
+          summary.forEach(function (item, i) {
+            var c = summaryIndexes[i];
+            if (c >= 0) sh.getRange(r + 1, c + 1).setValue(item[1] !== undefined && item[1] !== null ? item[1] : '');
+          });
+        }
+        // Статус пишется последним: «Использован» означает, что итоги уже записаны.
+        sh.getRange(r + 1, iUse + 1).setValue('Использован');
+        return { ok: true, synced: synced };
       }
     }
     return { ok: false, reason: 'employee_not_found' };

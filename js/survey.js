@@ -1,5 +1,5 @@
 /* =========================================================================
- * ДВИЖОК ОПРОСА (32 вопроса, 5 блоков)
+ * ДВИЖОК ОПРОСА (динамический набор включённых вопросов)
  * Типы вопросов:
  *   self      — самооценка (511): 4 варианта-уровня, тег level-*, без таймера;
  *   profile   — отношение/интерес/безопасность: A/B/C с портретными тегами
@@ -12,6 +12,7 @@ window.Survey = (function () {
   let state = null;   // { user, questions, index, frontier, answers, done }
   let timerHandle = null;
   let submitting = false;
+  let finalizing = false;
   let saveQueue = Promise.resolve();
   let saveError = null;
   const mascotPreload = [];
@@ -37,7 +38,10 @@ window.Survey = (function () {
   function start(user, questions) {
     // Всегда свежий проход. Без авто-резюма из localStorage: иначе повторный вход
     // по тому же коду показывал вопрос «с середины» (незавершённый прогресс).
-    state = { user, questions, index: 0, frontier: 0, answers: {}, done: false, knowledgeIntroSeen: false };
+    state = {
+      user, questions, questionSetKey: makeQuestionSetKey(questions),
+      index: 0, frontier: 0, answers: {}, done: false, knowledgeIntroSeen: false,
+    };
     resetSaveQueue();
     persist();
     show('screen-survey');
@@ -57,7 +61,7 @@ window.Survey = (function () {
     const answered = state.answers[q.id];
     const isFrontier = state.index === state.frontier;
 
-    // Своя картинка маскота на каждый вопрос (1..32) + меняющаяся композиция.
+    // Первые 32 маскота уникальны, затем набор циклически повторяется.
     const pos = POS[state.index % POS.length];
     const stage = document.querySelector('.survey-stage');
     stage.className = 'survey-stage ' + pos.side + ' ' + pos.align;
@@ -95,7 +99,8 @@ window.Survey = (function () {
   }
 
   function mascotUrl(index) {
-    return 'assets/mascot/' + (index + 1) + '.png';
+    const count = Math.max(1, Number(C.mascotCount) || 32);
+    return 'assets/mascot/' + ((index % count) + 1) + '.png';
   }
 
   function preloadMascotRange(start, count, total) {
@@ -228,12 +233,12 @@ window.Survey = (function () {
       questionId: q.id, block: q.block,
       answer: data.own != null ? data.own : data.value,
     };
-    // Интерфейс не ждёт медленный Apps Script. Запросы всё равно идут строго
-    // по одному и finish() ждёт окончания всей очереди перед финализацией.
+    // Интерфейс не ждёт медленный Apps Script. Запросы идут строго по одному,
+    // а атомарный finish при необходимости восстановит всё локальное состояние.
     saveQueue = saveQueue
       // После первой ошибки не отправляем оставшиеся десятки запросов в уже
-      // перегруженный Apps Script. Все ответы восстановит batch-синхронизация.
-      .then(() => saveError ? { ok: false, deferred: true } : API.saveAnswer(payload))
+      // перегруженный Apps Script. Все ответы восстановит атомарный finish.
+      .then(() => finalizing || saveError ? { ok: false, deferred: true } : API.saveAnswer(payload))
       .then((saved) => {
         if (saved && saved.deferred) return;
         if (!saved || !saved.ok) throw new Error('Ответ ' + q.id + ' не сохранён');
@@ -249,6 +254,7 @@ window.Survey = (function () {
   function resetSaveQueue() {
     saveQueue = Promise.resolve();
     saveError = null;
+    finalizing = false;
   }
 
   // --- навигация (назад ровно на один шаг) ---
@@ -276,41 +282,47 @@ window.Survey = (function () {
   }
 
   async function finish() {
+    if (finalizing) return;
+    finalizing = true;
     stopTimer();
     setProgress(1);
     el('back-btn').classList.add('hidden');
-    el('q-hint').textContent = 'Сохраняем ответы…';
-    await saveQueue;
-    // Локальное состояние — источник восстановления. Одним идемпотентным
-    // запросом досылаем все ответы, включая заблокированные вопросы знаний.
-    const synced = await API.saveAnswers({
+    el('q-hint').textContent = 'Завершаем опрос…';
+    const answers = state.questions.map((q) => {
+      const answer = state.answers[q.id] || {};
+      return {
+        questionId: q.id,
+        answer: answer.own != null ? answer.own : answer.value,
+      };
+    });
+    const res = computeResults();
+    // Один идемпотентный backend-вызов синхронизирует ответы, записывает итоги
+    // и только последним действием переводит токен в «Использован».
+    let saved = await API.finish({
       id: state.user.id,
       code: state.user.code,
-      answers: state.questions.map((q) => {
-        const answer = state.answers[q.id] || {};
-        return {
-          questionId: q.id,
-          answer: answer.own != null ? answer.own : answer.value,
-        };
-      }),
+      answers,
+      results: res,
     });
-    if (!synced || !synced.ok) {
+    // Callback мог потеряться уже после успешной записи. В таком случае
+    // завершённый токен — надёжное подтверждение, что итоги записаны.
+    if (!saved || !saved.ok) {
+      try {
+        const status = await API.validateCode(state.user.code);
+        if (status && status.valid === false && status.reason === 'used') saved = { ok: true, confirmed: true };
+      } catch (error) {
+        console.warn('Finish confirmation failed', error);
+      }
+    }
+    if (!saved || !saved.ok) {
+      finalizing = false;
       submitting = false;
       setProgress(state.index / state.questions.length);
       el('back-btn').classList.remove('hidden');
-      el('q-hint').textContent = 'Не все ответы сохранились. Проверьте соединение и повторите последний ответ.';
+      el('q-hint').textContent = 'Не удалось завершить опрос. Проверьте соединение и нажмите последний ответ ещё раз.';
       return;
     }
     saveError = null;
-    const res = computeResults();
-    const saved = await API.finish({ id: state.user.id, code: state.user.code, results: res });
-    if (!saved || !saved.ok) {
-      submitting = false;
-      setProgress(state.index / state.questions.length);
-      el('back-btn').classList.remove('hidden');
-      el('q-hint').textContent = 'Не удалось завершить опрос. Проверьте соединение и повторите последний ответ.';
-      return;
-    }
     state.done = true;
     persist();
     App.showThanks(buildProtocol());
@@ -418,28 +430,38 @@ window.Survey = (function () {
 
   function persist() { try { localStorage.setItem(progKeyFor(state.user.code), JSON.stringify(state)); } catch {} }
   function progKeyFor(code) { return C.progressKey + ':' + code; }
+  function makeQuestionSetKey(questions) {
+    return JSON.stringify((questions || []).map((q) => String(q.id)));
+  }
 
   // Незавершённый сохранённый проход под этим кодом (для «Продолжить»).
-  function getSaved(user) {
+  function getSaved(user, questions) {
     try {
       const raw = localStorage.getItem(progKeyFor(user.code));
       if (!raw) return null;
       const s = JSON.parse(raw);
-      return (s && s.user && s.user.code === user.code && !s.done && s.index > 0) ? s : null;
+      const savedSetKey = s && (s.questionSetKey || makeQuestionSetKey(s.questions));
+      return (s && s.user && s.user.code === user.code && !s.done && s.index > 0 &&
+        savedSetKey === makeQuestionSetKey(questions)) ? s : null;
     } catch { return null; }
   }
   // Продолжить с сохранённого места (вопросы берём свежие из таблицы).
   function resume(user, questions) {
-    const s = getSaved(user);
+    const s = getSaved(user, questions);
     if (!s) return start(user, questions);
     state = {
-      user, questions, index: s.index, frontier: s.frontier,
+      user, questions, questionSetKey: makeQuestionSetKey(questions), index: s.index, frontier: s.frontier,
       answers: s.answers || {}, done: false,
       knowledgeIntroSeen: s.knowledgeIntroSeen === true,
     };
     resetSaveQueue();
     show('screen-survey');
     el('progress').classList.remove('hidden');
+    if (questions.every((q) => !!state.answers[q.id])) {
+      submitting = true;
+      finish();
+      return;
+    }
     render();
   }
 

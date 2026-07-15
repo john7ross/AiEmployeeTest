@@ -57,8 +57,9 @@ function createBackendContext() {
 
   const sheets = {
     Employees: new MockSheet([
-      ['ID', 'ФИО', 'Отдел', 'Должность', 'Токен', 'Использование', 'Дата и время прохождения', 'Процент правильных ответов', 'Балл самооценки', 'Средний балл на основе ответов', 'Принятие/готовность использовать ИИ', 'Интерес и инициативность', 'Безопасность и ответственность', 'Портрет'],
-      [1, 'Тестовый Сотрудник', 'Отдел', 'Роль', 'TOKEN-1', 'Не использован', '', '', '', '', '', '', '', ''],
+      ['ID', 'ФИО', 'Отдел', 'Должность', 'Токен', 'Использование', 'Дата и время прохождения', 'Процент правильных ответов', 'Балл самооценки', 'Средний балл на основе ответов', 'Принятие/готовность использовать ИИ', 'Интерес и инициативность', 'Безопасность и ответственность', 'Портрет', 'Таймер'],
+      [1, 'Тестовый Сотрудник', 'Отдел', 'Роль', 'TOKEN-1', 'Не использован', '', '', '', '', '', '', '', '', true],
+      [2, 'Без таймера', 'Отдел', 'Роль', 'TOKEN-2', 'Не использован', '', '', '', '', '', '', '', '', false],
     ]),
     Questions: new MockSheet(questions),
     Answers: new MockSheet(answers),
@@ -92,8 +93,12 @@ function testBackendLifecycle() {
   const { context, sheets, ids } = createBackendContext();
 
   assert.deepEqual(JSON.parse(JSON.stringify(context.validateCode('TOKEN-1'))), {
-    valid: true, id: 1, fio: 'Тестовый Сотрудник', usage: 'Не использован',
+    valid: true, id: 1, fio: 'Тестовый Сотрудник', usage: 'Не использован', timerEnabled: true,
   });
+  assert.equal(context.validateCode('TOKEN-2').timerEnabled, false, 'снятый чекбокс отключает таймер');
+  const legacy = createBackendContext();
+  legacy.sheets.Employees.values.forEach((row) => row.pop());
+  assert.equal(legacy.context.validateCode('TOKEN-1').timerEnabled, true, 'без колонки сохраняется прежний таймер');
   assert.equal(employeeUsage(sheets), 'Не использован', 'вход не должен менять статус');
 
   assert.deepEqual(JSON.parse(JSON.stringify(context.getSurvey({}))), { ok: false, error: 'unauthorized' });
@@ -435,7 +440,7 @@ function testKnowledgeReviewNavigation() {
     { id: '301', block: 'knowledge', type: 'knowledge', text: 'Знания 301', correct: 'D', options: [{ key: 'D', text: 'Ответ D' }] },
     { id: '302', block: 'knowledge', type: 'knowledge', text: 'Знания 302', correct: 'C', options: [{ key: 'C', text: 'Ответ C' }] },
   ];
-  windowObject.Survey.start({ id: 1, code: 'KNOWLEDGE', fio: 'Тест' }, questions);
+  windowObject.Survey.start({ id: 1, code: 'KNOWLEDGE', fio: 'Тест', timerEnabled: true }, questions);
   assert.equal(timerStarts, 0, 'в профильном блоке таймер не запускается');
 
   elements['q-body'].children[0].onclick();
@@ -470,6 +475,17 @@ function testKnowledgeReviewNavigation() {
   assert.equal(timerStarts, 4, 'после возврата на текущий вопрос таймер запускается заново');
   assert.equal(elements['q-timer'].classList.contains('hidden'), false);
   assert.equal(elements['q-body'].children.length, 1, 'на текущем вопросе кнопка возврата не показывается');
+
+  timerStarts = 0;
+  windowObject.Survey.start({ id: 2, code: 'NO-TIMER', fio: 'Без таймера', timerEnabled: false }, questions);
+  elements['q-body'].children[0].onclick();
+  assert.equal(elements['q-text'].textContent, 'Знания 301', 'без таймера переход к блоку знаний происходит сразу');
+  assert.equal(elements['knowledge-notice'].classList.contains('hidden'), true, 'предупреждение об ограничении времени не показывается');
+  assert.equal(elements['q-timer'].classList.contains('hidden'), true, 'индикатор таймера скрыт');
+  assert.equal(timerStarts, 0, 'интервальный таймер не запускается');
+  elements['q-body'].children[0].onclick();
+  assert.equal(elements['q-text'].textContent, 'Знания 302');
+  assert.equal(timerStarts, 0, 'таймер остаётся выключенным на следующем вопросе знаний');
 }
 
 function testRestartButtonRemoved() {
@@ -546,8 +562,9 @@ function testWelcomeAndMascotLayoutGuards() {
   assert.match(html, /rel="icon" href="data:,"/);
   assert.match(html, /id="knowledge-notice"/);
   assert.match(html, /Блиц-опрос/);
-  assert.match(html, /js\/api\.js\?v=20260714-inclusive-survey/);
-  assert.match(html, /js\/app\.js\?v=20260714-inclusive-survey/);
+  assert.match(app, /timerEnabled:\s*res\.timerEnabled !== false/);
+  assert.match(html, /js\/api\.js\?v=20260715-employee-timer/);
+  assert.match(html, /js\/app\.js\?v=20260715-employee-timer/);
   assert.doesNotMatch(html, /js\/questions\.js/, 'production HTML не должен публиковать офлайн-копию вопросов');
 
   const sandbox = { window: {} };

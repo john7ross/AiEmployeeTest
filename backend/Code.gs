@@ -8,7 +8,7 @@
  *               Дата и время прохождения | Процент правильных ответов |
  *               Балл самооценки | Средний балл на основе ответов |
  *               Принятие/готовность использовать ИИ | Интерес и инициативность |
- *               Безопасность и ответственность | Портрет
+ *               Безопасность и ответственность | Портрет | Таймер
  *   Questions : ID(1)|Отношение(1) | ID(2)|Интерес(2) | ID(3)|Навыки(3)  (пары колонок)
  *   Answers   : ID вопроса | Вариант A | B | C | D | Номер правильного ответа |
  *               Тег A | Тег B | Тег C | Тег D
@@ -88,12 +88,19 @@ function validateCode(code) {
     var data = sh.getDataRange().getValues();
     var h = data[0];
     var iId = colIndex(h, 'ID'), iFio = colIndex(h, 'ФИО'),
-        iTok = colIndex(h, 'Токен'), iUse = colIndex(h, 'Использование');
+        iTok = colIndex(h, 'Токен'), iUse = colIndex(h, 'Использование'),
+        iTimer = colIndex(h, 'Таймер');
     for (var r = 1; r < data.length; r++) {
       if (String(data[r][iTok]).trim() === String(code).trim()) {
         var usage = iUse >= 0 ? String(data[r][iUse]).trim() : '';
         if (usage.toLowerCase() === 'использован') return { valid: false, reason: 'used' };
-        return { valid: true, id: data[r][iId], fio: data[r][iFio], usage: usage };
+        var timerEnabled = iTimer < 0
+          ? true
+          : data[r][iTimer] === true || String(data[r][iTimer]).trim().toLowerCase() === 'true';
+        return {
+          valid: true, id: data[r][iId], fio: data[r][iFio], usage: usage,
+          timerEnabled: timerEnabled
+        };
       }
     }
     return { valid: false, reason: 'not_found' };

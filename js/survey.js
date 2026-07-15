@@ -90,7 +90,7 @@ window.Survey = (function () {
     // На текущем вопросе знаний таймер обязателен. При просмотре предыдущего
     // уже отвеченного вопроса ответ остаётся заблокированным, но таймер не нужен.
     const reviewingKnowledge = q.block === 'knowledge' && !!answered && !isFrontier;
-    const useTimer = !!bc.timed && !reviewingKnowledge;
+    const useTimer = state.user.timerEnabled !== false && !!bc.timed && !reviewingKnowledge;
     renderBody(q, bc, answered, useTimer, reviewingKnowledge);
   }
 
@@ -113,7 +113,7 @@ window.Survey = (function () {
   }
 
   function needsKnowledgeIntro(q) {
-    if (!q || q.block !== 'knowledge' || state.knowledgeIntroSeen) return false;
+    if (!q || q.block !== 'knowledge' || state.knowledgeIntroSeen || state.user.timerEnabled === false) return false;
     return state.questions.findIndex((item) => item.block === 'knowledge') === state.index;
   }
 

@@ -37,7 +37,8 @@ window.App = (function () {
         err.classList.remove('hidden');
         return;
       }
-      user = { id: res.id, fio: res.fio, code };
+      // Старый backend без поля timerEnabled сохраняет прежнее поведение.
+      user = { id: res.id, fio: res.fio, code, timerEnabled: res.timerEnabled !== false };
       survey = await API.getSurvey(user);
       if (Survey.getSaved(user)) show('screen-resume');
       else showWelcome();

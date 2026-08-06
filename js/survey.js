@@ -9,7 +9,10 @@
  * ========================================================================= */
 window.Survey = (function () {
   const C = window.CONFIG;
-  let state = null;   // { user, questions, index, frontier, answers, done }
+  // Маркер «истёк таймер»: уходит в Results вместо пустой ячейки, чтобы
+  // «не знал» и «не успел за 20 секунд» не сливались в одно и то же.
+  const TIMEOUT_MARK = 'TIMEOUT';
+  let state = null;   // { user, questions, minAnswers, index, frontier, answers, done }
   let timerHandle = null;
   let submitting = false;
   let finalizing = false;
@@ -35,11 +38,12 @@ window.Survey = (function () {
     { side: 'side-right', align: 'mascot-low',    x: '10px',  y: '18px',  tilt: '-6deg' },
   ];
 
-  function start(user, questions) {
+  function start(user, questions, minAnswers) {
     // Всегда свежий проход. Без авто-резюма из localStorage: иначе повторный вход
     // по тому же коду показывал вопрос «с середины» (незавершённый прогресс).
     state = {
-      user, questions, questionSetKey: makeQuestionSetKey(questions),
+      user, questions, minAnswers: minAnswers || null,
+      questionSetKey: makeQuestionSetKey(questions),
       index: 0, frontier: 0, answers: {}, done: false, knowledgeIntroSeen: false,
     };
     resetSaveQueue();
@@ -225,13 +229,21 @@ window.Survey = (function () {
     advance();
   }
 
+  // Единственное место, где решается, что уедет в таблицу как «ответ».
+  // Истёкший таймер превращается в маркер, а не в пустую ячейку.
+  function outgoingAnswer(data) {
+    if (data.own != null) return data.own;
+    if (data.value != null) return data.value;
+    return data.timedOut ? TIMEOUT_MARK : null;
+  }
+
   function record(q, data) {
     state.answers[q.id] = Object.assign({ block: q.block, type: q.type }, data);
     persist();
     const payload = {
       id: state.user.id, code: state.user.code,
       questionId: q.id, block: q.block,
-      answer: data.own != null ? data.own : data.value,
+      answer: outgoingAnswer(data),
     };
     // Интерфейс не ждёт медленный Apps Script. Запросы идут строго по одному,
     // а атомарный finish при необходимости восстановит всё локальное состояние.
@@ -292,7 +304,7 @@ window.Survey = (function () {
       const answer = state.answers[q.id] || {};
       return {
         questionId: q.id,
-        answer: answer.own != null ? answer.own : answer.value,
+        answer: outgoingAnswer(answer),
       };
     });
     const res = computeResults();
@@ -367,7 +379,11 @@ window.Survey = (function () {
     Object.keys(P.dimensions).forEach((key) => {
       const cfg = P.dimensions[key];
       const vals = values[key];
-      const score = vals.length >= cfg.minAnswers
+      // Порог приходит из таблицы (Settings ▸ min_answers). Значения из config.js —
+      // запасные: если сервер ничего не прислал, поведение прежнее.
+      const served = state && state.minAnswers && Number(state.minAnswers[key]);
+      const need = Number.isFinite(served) && served > 0 ? served : cfg.minAnswers;
+      const score = vals.length >= need
         ? Math.round(vals.reduce((sum, value) => sum + value, 0) / vals.length)
         : null;
       result[cfg.resultKey] = score;
@@ -446,11 +462,12 @@ window.Survey = (function () {
     } catch { return null; }
   }
   // Продолжить с сохранённого места (вопросы берём свежие из таблицы).
-  function resume(user, questions) {
+  function resume(user, questions, minAnswers) {
     const s = getSaved(user, questions);
-    if (!s) return start(user, questions);
+    if (!s) return start(user, questions, minAnswers);
     state = {
-      user, questions, questionSetKey: makeQuestionSetKey(questions), index: s.index, frontier: s.frontier,
+      user, questions, minAnswers: minAnswers || null,
+      questionSetKey: makeQuestionSetKey(questions), index: s.index, frontier: s.frontier,
       answers: s.answers || {}, done: false,
       knowledgeIntroSeen: s.knowledgeIntroSeen === true,
     };

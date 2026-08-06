@@ -1,0 +1,160 @@
+<title>ИИ-опрос · отдел аналитики</title>
+<style>
+:root{
+  --ground:#F5F8F6; --surface:#ffffff; --surface2:#eef3f0;
+  --ink:#182119; --muted:#5b6b61; --faint:#8a988f;
+  --green:#005C32; --green2:#0a7a45; --mint:#E6EFEB; --line:#dde6e0;
+  --good:#0a7a45; --warm:#b8791f; --cool:#2f6f7a;
+  --r:14px; --maxw:1080px;
+}
+@media (prefers-color-scheme:dark){:root{
+  --ground:#0d1310; --surface:#141d18; --surface2:#18231d;
+  --ink:#e7efe9; --muted:#9db0a4; --faint:#6f8478;
+  --green:#4bbd82; --green2:#5fce93; --mint:#1d2c24; --line:#26332b;
+  --good:#4bbd82; --warm:#d6a24a; --cool:#79b9c4; }}
+:root[data-theme="dark"]{
+  --ground:#0d1310; --surface:#141d18; --surface2:#18231d;
+  --ink:#e7efe9; --muted:#9db0a4; --faint:#6f8478;
+  --green:#4bbd82; --green2:#5fce93; --mint:#1d2c24; --line:#26332b; --warm:#d6a24a; --cool:#79b9c4;}
+:root[data-theme="light"]{
+  --ground:#F5F8F6; --surface:#ffffff; --surface2:#eef3f0;
+  --ink:#182119; --muted:#5b6b61; --faint:#8a988f;
+  --green:#005C32; --green2:#0a7a45; --mint:#E6EFEB; --line:#dde6e0; --warm:#b8791f; --cool:#2f6f7a;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font-family:system-ui,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.55;
+  -webkit-font-smoothing:antialiased;}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:40px 24px 72px;}
+.eyebrow{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--green);font-weight:700;}
+h1{font-size:clamp(26px,4vw,38px);line-height:1.1;margin:10px 0 8px;letter-spacing:-.02em;text-wrap:balance;font-weight:800;}
+.sub{color:var(--muted);font-size:15px;max-width:60ch;}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px;}
+.tag{background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 13px;font-size:12.5px;color:var(--muted);}
+.tag b{color:var(--ink);font-weight:700;}
+h2{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);
+  font-weight:700;margin:52px 0 18px;padding-bottom:10px;border-bottom:1px solid var(--line);}
+.grid{display:grid;gap:16px;}
+.m4{grid-template-columns:repeat(4,1fr);}
+.m3{grid-template-columns:repeat(3,1fr);}
+.m2{grid-template-columns:repeat(2,1fr);}
+@media(max-width:820px){.m4{grid-template-columns:repeat(2,1fr)}.m3,.m2{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:20px;}
+.stat .n{font-size:34px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1;}
+.stat .l{font-size:13px;color:var(--muted);margin-top:8px;}
+.stat .s{font-size:12px;color:var(--faint);margin-top:2px;}
+.meter{margin-top:14px;}
+.meter .top{display:flex;justify-content:space-between;align-items:baseline;font-size:13px;}
+.meter .top b{font-size:20px;font-variant-numeric:tabular-nums;}
+.bar{height:8px;border-radius:6px;background:var(--surface2);margin-top:7px;overflow:hidden;}
+.bar>span{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--green2),var(--green));}
+.split{display:flex;height:34px;border-radius:9px;overflow:hidden;border:1px solid var(--line);margin-top:6px;}
+.split>div{display:flex;align-items:center;justify-content:center;color:#fff;font-size:13px;font-weight:700;}
+.finding{display:flex;gap:14px;align-items:flex-start;}
+.finding .k{flex:0 0 6px;align-self:stretch;border-radius:4px;background:var(--green2);}
+.finding h3{margin:0 0 5px;font-size:15.5px;}
+.finding p{margin:0;color:var(--muted);font-size:13.5px;}
+.rec{counter-reset:r;display:grid;gap:12px;}
+.rec .card{display:flex;gap:16px;align-items:flex-start;}
+.rec .card::before{counter-increment:r;content:counter(r,decimal-leading-zero);
+  font-variant-numeric:tabular-nums;font-weight:800;color:var(--green);font-size:15px;
+  border:1px solid var(--line);border-radius:8px;padding:4px 9px;background:var(--surface2);}
+.rec h3{margin:0 0 4px;font-size:15px;}
+.rec p{margin:0;color:var(--muted);font-size:13.5px;}
+table{width:100%;border-collapse:collapse;font-size:13.5px;background:var(--surface);
+  border:1px solid var(--line);border-radius:var(--r);overflow:hidden;}
+thead th{text-align:left;font-size:11.5px;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--faint);font-weight:700;padding:13px 16px;border-bottom:1px solid var(--line);}
+tbody td{padding:13px 16px;border-bottom:1px solid var(--line);vertical-align:top;}
+tbody tr:last-child td{border-bottom:none;}
+tbody tr:hover{background:var(--surface2);}
+td .nm{font-weight:700;}
+td .rl{color:var(--faint);font-size:12px;}
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:3px 9px;border-radius:999px;white-space:nowrap;}
+.pill.w{background:color-mix(in srgb,var(--warm) 15%,transparent);color:var(--warm);}
+.pill.s{background:color-mix(in srgb,var(--cool) 16%,transparent);color:var(--cool);}
+.pill.f{background:var(--mint);color:var(--green);}
+.tabwrap{overflow-x:auto;}
+.note{color:var(--faint);font-size:12.5px;margin-top:14px;line-height:1.6;}
+footer{margin-top:56px;padding-top:20px;border-top:1px solid var(--line);color:var(--faint);font-size:12.5px;text-align:center;}
+</style>
+
+<div class="wrap">
+  <div class="eyebrow">Пульс внедрения ИИ · Волна 1</div>
+  <h1>Как отдел встречает ИИ-инструменты</h1>
+  <p class="sub">Аналитический разбор по итогам первого опроса. Показывает общую картину готовности и подсказывает, на какие форматы обучения и сценарии опереться при внедрении.</p>
+  <div class="meta">
+    <span class="tag"><b>14</b> сотрудников прошли опрос</span>
+    <span class="tag">Отдел аналитики</span>
+    <span class="tag">Волна 1 · июль 2026</span>
+    <span class="tag">3 не участвовали · 1 тестовый профиль исключён</span>
+  </div>
+
+  <h2>Общая картина</h2>
+  <div class="grid m4">
+    <div class="card stat"><div class="n">70<span style="font-size:18px">/100</span></div><div class="l">Средняя вовлечённость в тему ИИ</div><div class="s">уверенно выше середины</div></div>
+    <div class="card stat"><div class="n">10<span style="font-size:18px">из 14</span></div><div class="l">уже применяют ИИ в работе</div><div class="s">регулярно или для отдельных задач</div></div>
+    <div class="card stat"><div class="n">9<span style="font-size:18px">из 14</span></div><div class="l">предпочитают воркшопы</div><div class="s">короткие занятия на реальных кейсах</div></div>
+    <div class="card stat"><div class="n">5</div><div class="l">готовых «проводников ИИ»</div><div class="s">ядро, на которое можно опереться</div></div>
+  </div>
+
+  <div class="grid m2" style="margin-top:16px">
+    <div class="card">
+      <div style="font-size:13px;color:var(--muted);font-weight:600">Распределение по отношению к ИИ</div>
+      <div class="split">
+        <div style="width:57%;background:linear-gradient(90deg,var(--green),var(--green2))">Энтузиасты · 8</div>
+        <div style="width:43%;background:var(--faint)">Открытые · 6</div>
+      </div>
+      <div class="note">«Открытые» — те, кто в целом за ИИ, но пока присматривается. Оппонентов в отделе нет — это очень здоровый старт.</div>
+    </div>
+    <div class="card">
+      <div style="font-size:13px;color:var(--muted);font-weight:600;margin-bottom:6px">Три опоры готовности</div>
+      <div class="meter"><div class="top"><span>Интерес и активное участие</span><b>77</b></div><div class="bar"><span style="width:77%"></span></div></div>
+      <div class="meter"><div class="top"><span>Бережность к данным</span><b>77</b></div><div class="bar"><span style="width:77%"></span></div></div>
+      <div class="meter"><div class="top"><span>Принятие в повседневную работу</span><b>64</b></div><div class="bar"><span style="width:64%"></span></div></div>
+    </div>
+  </div>
+
+  <h2>Что показал опрос</h2>
+  <div class="grid" style="gap:14px">
+    <div class="card finding"><div class="k"></div><div><h3>Живой интерес — главный ресурс отдела</h3><p>Активное участие и любопытство к теме держатся высоко почти у всех. Люди хотят разбираться, а не отбывать повинность — это лучшее топливо для внедрения.</p></div></div>
+    <div class="card finding"><div class="k"></div><div><h3>Формат номер один — короткие практические воркшопы</h3><p>Две трети отдела прямо выбирают обучение на реальных кейсах, руками, в группе. Длинные лекции и обязательные встречи заходят хуже; несколько человек любят учиться самостоятельно.</p></div></div>
+    <div class="card finding"><div class="k"></div><div><h3>Запрос смещён в сторону работы с данными</h3><p>Почти все хотят учиться тому, как искать, анализировать и обобщать большие объёмы информации — это ближе к сути их работы, чем подготовка текстов.</p></div></div>
+    <div class="card finding"><div class="k" style="background:var(--cool)"></div><div><h3>Культура бережного обращения с данными уже есть</h3><p>Столкнувшись с задачей на персональных данных, никто не готов «загрузить как есть»: большинство сначала обезличит данные, часть предпочтёт внутренние инструменты. На это можно уверенно опираться.</p></div></div>
+    <div class="card finding"><div class="k" style="background:var(--warm)"></div><div><h3>Общая точка роста — база и терминология</h3><p>Практика у многих опережает теорию: люди пользуются ИИ, но понятийная основа местами неровная. Это самая благодарная зона для обучения — короткий системный вводный курс закроет её быстро.</p></div></div>
+  </div>
+
+  <h2>Что с этим делать дальше</h2>
+  <div class="rec">
+    <div class="card"><div><h3>Сделать воркшопы основным форматом</h3><p>Короткие регулярные встречи на реальных кейсах отдела — под запрос большинства. Тема первого блока — поиск, анализ и обобщение информации.</p></div></div>
+    <div class="card"><div><h3>Опереться на ядро из пяти проводников</h3><p>Дать заинтересованным роль амбассадоров: они собирают удачные практики и подтягивают остальных. Учимся друг у друга, а не сверху вниз.</p></div></div>
+    <div class="card"><div><h3>Закрыть базу единым коротким курсом</h3><p>Системный вводный по понятиям (модель, контекст, токены, RAG, агенты, безопасность) выровняет фундамент и снимет разрыв между практикой и теорией.</p></div></div>
+    <div class="card"><div><h3>Завести общую копилку промптов</h3><p>Живая база примеров под рабочие задачи. Формат, к которому отдел явно готов и который делает пользу от ИИ наглядной и повторяемой.</p></div></div>
+    <div class="card"><div><h3>Мягко работать с принятием</h3><p>Самая тихая из трёх опор — встроенность ИИ в повседневность. Помогает язык «возвращённого времени» и встраивание инструментов в привычные системы, а не поверх них.</p></div></div>
+  </div>
+
+  <h2>Персональные портреты · кому что ближе</h2>
+  <div class="tabwrap">
+  <table>
+    <thead><tr><th>Сотрудник</th><th>В двух словах</th><th>Формат</th><th>Мягкий фокус</th></tr></thead>
+    <tbody>
+      <tr><td><div class="nm">Мария Иванова</div><div class="rl">Бизнес-аналитик 3 кат.</div></td><td>Энергия плюс критичный ум; готовый проводник</td><td><span class="pill f">Воркшопы</span></td><td>Давать по-настоящему стоящие задачи</td></tr>
+      <tr><td><div class="nm">Дмитрий Петров</div><div class="rl">Ведущий БА 1 кат.</div></td><td>Зрелый авторитет, сильная база, безопасность</td><td><span class="pill f">Воркшопы</span></td><td>Делиться приёмами с командой</td></tr>
+      <tr><td><div class="nm">Алексей Смирнов</div><div class="rl">Бизнес-аналитик 3 кат.</div></td><td>Свободное владение, вовлечён, открыт</td><td><span class="pill f">Воркшопы</span></td><td>Личный пример в работе с данными</td></tr>
+      <tr><td><div class="nm">Игорь Соколов</div><div class="rl">Ведущий БА 1 кат.</div></td><td>Самостоятельный, пробует новое сразу</td><td><span class="pill s">Самостоятельно</span></td><td>Мостик к коллегам, обмен находками</td></tr>
+      <tr><td><div class="nm">Виктор Морозов</div><div class="rl">Бизнес-аналитик 2 кат.</div></td><td>Сильные навыки при скромной самооценке</td><td><span class="pill f">Воркшопы</span></td><td>Больше доверять своей компетентности</td></tr>
+      <tr><td><div class="nm">Анна Волкова</div><div class="rl">Младший БА 3 кат.</div></td><td>Искренний азарт, делится, перепроверяет</td><td><span class="pill f">Воркшопы</span></td><td>Фундамент вслед за энтузиазмом</td></tr>
+      <tr><td><div class="nm">Никита Орлов</div><div class="rl">Ведущий БА 1 кат.</div></td><td>Практик «из рук», делится приёмами</td><td><span class="pill f">Воркшопы</span></td><td>Теория под уверенную практику</td></tr>
+      <tr><td><div class="nm">Роман Зайцев</div><div class="rl">Менеджер по работе с партнёрами</div></td><td>Деятельный, общительный, вовлечён</td><td><span class="pill f">Воркшопы</span></td><td>Сценарии под роль менеджера</td></tr>
+      <tr><td><div class="nm">Ксения Новикова</div><div class="rl">Бизнес-аналитик 3 кат.</div></td><td>Основательность и внимание к безопасности</td><td><span class="pill f">Гибко</span></td><td>ИИ как возвращённое время</td></tr>
+      <tr><td><div class="nm">Татьяна Козлова</div><div class="rl">Ведущий БА 3 кат.</div></td><td>Зрелая экспертиза, реалистичный взгляд</td><td><span class="pill f">Гибко</span></td><td>Приёмы эффективности, заготовки</td></tr>
+      <tr><td><div class="nm">Ирина Белова</div><div class="rl">Бизнес-аналитик 1 кат.</div></td><td>Вдумчивость, аккуратность с данными</td><td><span class="pill f">Гибко</span></td><td>Короткий отобранный набор инструментов</td></tr>
+      <tr><td><div class="nm">Светлана Егорова</div><div class="rl">Младший БА 1 кат.</div></td><td>Ровный, уравновешенный взгляд</td><td><span class="pill f">Гибко</span></td><td>Готовые шаблоны и примеры</td></tr>
+      <tr><td><div class="nm">Наталья Гусева</div><div class="rl">Бизнес-аналитик 1 кат.</div></td><td>Честность, уважение к качеству работы</td><td><span class="pill w">Воркшопы</span></td><td>Ранние наглядные победы</td></tr>
+      <tr><td><div class="nm">Артём Крылов</div><div class="rl">Ведущий БА 2 кат.</div></td><td>Любознателен, пробует сам, тихий формат</td><td><span class="pill s">Небольшие сессии</span></td><td>Структурный фундамент основ</td></tr>
+    </tbody>
+  </table>
+  </div>
+  <div class="note">Полный портрет по каждому сотруднику — в персональном PDF (папка <b>pdf/</b>), по одному листу А4, для отправки в личку в качестве благодарности. Формулировки везде мягкие: пробелы поданы как точки роста, интерес — как активное участие; без цифр, оценок и сравнений между людьми.</div>
+
+  <footer>Внутренний материал · подготовлено для контроля внедрения ИИ · данные из опросной платформы (Google Sheets)</footer>
+</div>

@@ -671,8 +671,19 @@ function testWelcomeAndMascotLayoutGuards() {
   assert.match(html, /Блиц-опрос/);
   assert.match(app, /timerEnabled:\s*res\.timerEnabled !== false/);
   assert.match(app, /Ошибка настройки опроса/);
-  assert.match(html, /js\/api\.js\?v=20260715-dynamic-questions/);
-  assert.match(html, /js\/app\.js\?v=20260715-dynamic-questions/);
+  // Версия в query-параметре нужна, чтобы браузер не подсунул старый JS к новому backend.
+  // Проверяем не конкретное значение (иначе тест надо править на каждом релизе), а то,
+  // что параметр есть у всех локальных ресурсов и одинаков — иначе часть файлов
+  // обновится, а часть останется в кеше.
+  const localAssets = [...html.matchAll(/(?:src|href)="((?:js|css)\/[^"]+)"/g)].map((m) => m[1]);
+  assert.ok(localAssets.length >= 4, 'в index.html должны подключаться css и js');
+  const versions = new Set();
+  for (const asset of localAssets) {
+    const match = asset.match(/\?v=([^"&]+)$/);
+    assert.ok(match, `нет ?v= у ${asset}: браузер может взять файл из кеша`);
+    versions.add(match[1]);
+  }
+  assert.equal(versions.size, 1, `версии ресурсов разъехались: ${[...versions].join(', ')}`);
   assert.doesNotMatch(html, /js\/questions\.js/, 'production HTML не должен публиковать офлайн-копию вопросов');
 
   const sandbox = { window: {} };

@@ -17,7 +17,7 @@ window.App = (function () {
     el('back-btn').onclick = () => Survey.back();
     el('dl-protocol').onclick = downloadProtocol;
     el('copy-prompt').onclick = copyPrompt;
-    el('resume-continue').onclick = () => Survey.resume(user, survey.questions);
+    el('resume-continue').onclick = () => Survey.resume(user, survey.questions, survey.minAnswers);
     el('knowledge-notice-ok').onclick = () => Survey.confirmKnowledgeIntro();
     el('code-input').focus();
   }
@@ -111,7 +111,7 @@ window.App = (function () {
 
   function onStart() {
     el('start-btn').disabled = true;
-    Survey.start(user, survey.questions);
+    Survey.start(user, survey.questions, survey.minAnswers);
   }
 
   function showThanks(protocolText) {

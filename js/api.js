@@ -43,6 +43,9 @@ window.API = (function () {
       questions: res.questions || [],
       principles: res.principles || C.principles,
       prompt: res.prompt || C.aiPromptTemplate,
+      // Порог minAnswers задаётся в таблице (Settings ▸ min_answers).
+      // Старый бэкенд его не присылает — тогда работают значения из config.js.
+      minAnswers: res.minAnswers || null,
     };
     return survey;
   }

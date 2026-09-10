@@ -37,8 +37,14 @@ window.App = (function () {
         err.classList.remove('hidden');
         return;
       }
-      // Старый backend без поля timerEnabled сохраняет прежнее поведение.
-      user = { id: res.id, fio: res.fio, code, timerEnabled: res.timerEnabled !== false };
+      // Старый backend без полей timerEnabled/timerSeconds сохраняет прежнее
+      // поведение: таймер включён, длительность — запасная из config.js.
+      const seconds = Number(res.timerSeconds);
+      user = {
+        id: res.id, fio: res.fio, code,
+        timerEnabled: res.timerEnabled !== false,
+        timerSeconds: seconds > 0 ? seconds : null,
+      };
       survey = await API.getSurvey(user);
       if (Survey.getSaved(user, survey.questions)) show('screen-resume');
       else showWelcome();

@@ -14,11 +14,14 @@ window.CONFIG = {
   // Блоки в порядке прохождения. Порядок вопросов внутри — по questions.js/таблице.
   //   timed  — обратный таймер на каждый вопрос блока (антигуглинг);
   //   scored — вопросы с правильным ответом (процент правильных).
+  // timerSeconds здесь — ЗАПАСНОЕ значение. Рабочее приходит из таблицы:
+  // Settings ▸ timer_seconds для всех и колонка «Таймер» в Employees для
+  // конкретного человека. Менять длительность в коде не нужно.
   blocks: [
     { id: 'self',      title: 'Самооценка',          timed: false },
     { id: 'attitude',  title: 'Отношение к ИИ',      timed: false },
     { id: 'interest',  title: 'Интерес к ИИ',        timed: false },
-    { id: 'knowledge', title: 'Навыки и знания',     timed: true, timerSeconds: 20, scored: true },
+    { id: 'knowledge', title: 'Навыки и знания',     timed: true, timerSeconds: 40, scored: true },
     { id: 'security',  title: 'Безопасность и данные', timed: false },
   ],
 

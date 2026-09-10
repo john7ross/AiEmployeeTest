@@ -197,12 +197,11 @@ function validateCode(code) {
       if (String(data[r][iTok]).trim() === String(code).trim()) {
         var usage = iUse >= 0 ? String(data[r][iUse]).trim() : '';
         if (usage.toLowerCase() === 'использован') return { valid: false, reason: 'used' };
-        var timerEnabled = iTimer < 0
-          ? true
-          : data[r][iTimer] === true || String(data[r][iTimer]).trim().toLowerCase() === 'true';
+        var timer = iTimer < 0 ? { enabled: true, seconds: getDefaultTimerSeconds() }
+                                : parseTimerCell(data[r][iTimer]);
         return {
           valid: true, id: data[r][iId], fio: data[r][iFio], usage: usage,
-          timerEnabled: timerEnabled
+          timerEnabled: timer.enabled, timerSeconds: timer.seconds
         };
       }
     }
@@ -246,6 +245,37 @@ function getSetting(key) {
     }
   }
   return '';
+}
+
+/* =========================================================================
+ * ТАЙМЕР БЛИЦ-ВОПРОСОВ
+ * Живёт в таблице, а не в коде фронтенда. Значение по умолчанию —
+ * Settings > timer_seconds. Персональное — колонка «Таймер» в Employees:
+ *
+ *   пусто или TRUE     столько секунд, сколько задано по умолчанию
+ *   FALSE, «нет», 0    без таймера, предупреждение тоже не показывается
+ *   число              столько секунд именно этому сотруднику
+ *
+ * Так одному можно дать 40 секунд, другому 90, третьему снять ограничение,
+ * и всё это без правки кода и без публикации фронтенда.
+ * ========================================================================= */
+var TIMER_SECONDS_FALLBACK = 40;
+
+function getDefaultTimerSeconds() {
+  var n = parseInt(String(getSetting('timer_seconds') || '').trim(), 10);
+  return isFinite(n) && n > 0 ? n : TIMER_SECONDS_FALLBACK;
+}
+
+function parseTimerCell(value) {
+  var def = getDefaultTimerSeconds();
+  if (value === true) return { enabled: true, seconds: def };
+  if (value === false) return { enabled: false, seconds: 0 };
+  var raw = String(value == null ? '' : value).trim().toLowerCase();
+  if (raw === '') return { enabled: true, seconds: def };
+  if (raw === 'true' || raw === 'да') return { enabled: true, seconds: def };
+  if (raw === 'false' || raw === 'нет' || raw === '0') return { enabled: false, seconds: 0 };
+  var n = parseInt(raw, 10);
+  return isFinite(n) && n > 0 ? { enabled: true, seconds: n } : { enabled: true, seconds: def };
 }
 
 /* Минимум ответов на характеристику. ЕДИНЫЙ ИСТОЧНИК — лист Settings, строка
@@ -736,6 +766,8 @@ function auditQuestionSets() {
   for (var r = 1; r < data.length; r++) {
     var id = data[r][iId];
     if (id === '' || id == null) continue;
+    // Пустая строка с одним ID — не сотрудник, см. validateSurvey.
+    if (iFio >= 0 && String(data[r][iFio] == null ? '' : data[r][iFio]).trim() === '') continue;
     var ids = getQuestions(id).map(function (q) { return q.id; });
     var have = {};
     ids.forEach(function (q) { have[q] = true; });
@@ -827,7 +859,10 @@ function validateSurvey() {
     var id = String(ed[r2][iId] == null ? '' : ed[r2][iId]).trim();
     var fio = String(ed[r2][iFio] == null ? '' : ed[r2][iFio]).trim();
     var tok = String(ed[r2][iTok] == null ? '' : ed[r2][iTok]).trim();
-    if (!id && !fio && !tok) continue;
+    // Сотрудник — это строка, где есть ФИО или токен. Строка, в которой остался
+    // один ID (протянутая вниз разметка), сотрудником не считается: иначе проверка
+    // тонет в сотнях ложных «нет ФИО» и настоящие ошибки в ней не видно.
+    if (!fio && !tok) continue;
     if (!id) { problems.push('Employees, строка ' + (r2 + 1) + ' (' + fio + '): нет ID'); continue; }
     if (!fio) problems.push('Employees, ID ' + id + ': нет ФИО');
     if (seenId[id]) problems.push('Employees: ID ' + id + ' встречается дважды');
@@ -858,6 +893,13 @@ function validateSurvey() {
   }
 
   // --- Settings и волны ---
+  var timerRaw = String(getSetting('timer_seconds') || '').trim();
+  if (timerRaw === '') {
+    warnings.push('Settings: нет строки timer_seconds — таймер блица будет ' + TIMER_SECONDS_FALLBACK + ' сек.');
+  } else if (!(parseInt(timerRaw, 10) > 0)) {
+    problems.push('Settings ▸ timer_seconds = «' + timerRaw + '», ожидается число секунд больше нуля');
+  }
+
   try { getMinAnswers(); } catch (err) { problems.push(String(err.message || err)); }
   if (!String(getSetting('prompt') || '').trim()) warnings.push('Settings: пустой prompt — сотруднику нечего будет скопировать');
   var wave = getWave();

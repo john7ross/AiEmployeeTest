@@ -285,6 +285,38 @@ def pick_prev(history_dir, cur_date, cur_wave):
     return best
 
 
+def attach_knowledge_delta(people, prev_snapshot):
+    """Прирост знаний по каждому человеку: этот процент правильных против его же
+    процента в прошлой волне. Сравниваются проценты, а не число правильных:
+    наборы вопросов у волн разные, и абсолютные числа несопоставимы.
+
+    Возвращает сводку «сколько выросли / просели / без пары в прошлой волне» —
+    именно она отвечает на вопрос «усилились ли знания после обучений»."""
+    summary = {"выросли": 0, "просели": 0, "без изменений": 0, "не с чем сравнить": 0}
+    prev_pct = {}
+    if prev_snapshot:
+        for q in prev_snapshot.get("people", []):
+            v = (q.get("scores") or {}).get("knowledge_pct")
+            if v is not None:
+                prev_pct[str(q.get("id"))] = v
+    for p in people:
+        s = p["scores"]
+        was = prev_pct.get(str(p["id"]))
+        now = s.get("knowledge_pct")
+        s["knowledge_prev_pct"] = was
+        s["knowledge_delta"] = (round(now - was) if was is not None and now is not None else None)
+        d = s["knowledge_delta"]
+        if d is None:
+            summary["не с чем сравнить"] += 1
+        elif d > 0:
+            summary["выросли"] += 1
+        elif d < 0:
+            summary["просели"] += 1
+        else:
+            summary["без изменений"] += 1
+    return summary
+
+
 def to_text(agg, people, notdone, wave_diff, meta=None):
     meta = meta or {}
     o = []
@@ -370,6 +402,10 @@ def to_text(agg, people, notdone, wave_diff, meta=None):
         o.append("\nИЗМЕНЕНИЯ К ПРОШЛОЙ ВОЛНЕ:")
         o.append(f"  Средние Δ: {wave_diff['means']}  | Знания Δ: {wave_diff['knowledge_pct_mean']} п.п.  "
                  f"| Калибровка Δ: {wave_diff['calibration_mean']} п.п.  | Портрет Δ: {wave_diff['portrait']}")
+        growth = wave_diff.get("knowledge_growth")
+        if growth:
+            o.append(f"  Знания по людям: выросли {growth['выросли']}, просели {growth['просели']}, "
+                     f"без изменений {growth['без изменений']}, не с чем сравнить {growth['не с чем сравнить']}")
         cal = wave_diff.get("calibration_mean")
         if cal is not None and cal >= 22:
             o.append("  АНТИМЕТРИКА «ложная уверенность»: разрыв самооценки и факта вырос на ≥22 п.п. "
@@ -389,6 +425,13 @@ def to_text(agg, people, notdone, wave_diff, meta=None):
         o.append(f"\n#{p['id']} {p['name']} — {p['role']}")
         o.append(f"  Портрет:{p['portrait']} | Принятие:{s['adoption']} Интерес:{s['interest']} Безоп:{s['safety']} "
                  f"| Знания:{s['knowledge_correct']}/{s['knowledge_total']} ({s['knowledge_pct']}%)")
+        if s.get("knowledge_delta") is not None:
+            move = ("вырос" if s["knowledge_delta"] > 0 else
+                    "просел" if s["knowledge_delta"] < 0 else "остался на месте")
+            o.append(f"  Прошлая волна: {s['knowledge_prev_pct']}% -> сейчас {s['knowledge_pct']}% "
+                     f"({s['knowledge_delta']:+} п.п., {move})")
+        elif s.get("knowledge_pct") is not None:
+            o.append("  Прошлой волны для сравнения нет — это его первая точка по знаниям")
         cal = s["calibration"]
         if cal is not None:
             hint = ("переоценивает себя" if cal >= agg_gap else
@@ -470,8 +513,14 @@ def main():
     prev_path = a.prev
     if not prev_path and not a.no_history and hist_dir:
         prev_path = pick_prev(hist_dir, wdate, wnum)
-    prev = json.load(open(prev_path, encoding="utf-8-sig"))["aggregate"] if prev_path else None
+    prev_snapshot = json.load(open(prev_path, encoding="utf-8-sig")) if prev_path else None
+    prev = prev_snapshot["aggregate"] if prev_snapshot else None
     wave = diff(agg, prev)
+    # Персональный прирост знаний. Нужен там, где волна меряет только хард-скиллы:
+    # характеристики и портрет в такой волне пустые, а расти или не расти — видно здесь.
+    knowledge_growth = attach_knowledge_delta(people, prev_snapshot)
+    if wave is not None:
+        wave["knowledge_growth"] = knowledge_growth
 
     out = {"wave": wnum, "wave_date": wdate,
            "prev_wave": os.path.basename(prev_path) if prev_path else None,

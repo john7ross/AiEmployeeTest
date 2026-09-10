@@ -70,12 +70,15 @@ function createBackendContext() {
       ['ID', 'ФИО', 'Отдел', 'Должность', 'Токен', 'Использование', 'Дата и время прохождения', 'Процент правильных ответов', 'Балл самооценки', 'Средний балл на основе ответов', 'Принятие/готовность использовать ИИ', 'Интерес и инициативность', 'Безопасность и ответственность', 'Портрет', 'Таймер'],
       [1, 'Тестовый Сотрудник', 'Отдел', 'Роль', 'TOKEN-1', 'Не использован', '', '', '', '', '', '', '', '', true],
       [2, 'Без таймера', 'Отдел', 'Роль', 'TOKEN-2', 'Не использован', '', '', '', '', '', '', '', '', false],
+      [3, 'Свой таймер', 'Отдел', 'Роль', 'TOKEN-3', 'Не использован', '', '', '', '', '', '', '', '', 90],
+      [4, 'Пустой таймер', 'Отдел', 'Роль', 'TOKEN-4', 'Не использован', '', '', '', '', '', '', '', '', ''],
+      [999, '', '', '', '', 'Не использован', '', '', '', '', '', '', '', 'Конформист', true],
     ]),
     Questions: new MockSheet(questions),
     Answers: new MockSheet(answers),
     Results: new MockSheet([['ID пользователя', 'ID вопроса', 'Ответ', 'Дата и время получения']]),
     Principles: new MockSheet([['Принцип']]),
-    Settings: new MockSheet([['prompt', 'Prompt']]),
+    Settings: new MockSheet([['prompt', 'Prompt'], ['timer_seconds', 60]]),
   };
 
   const lock = { waitLock() {}, releaseLock() {} };
@@ -88,6 +91,7 @@ function createBackendContext() {
     parseInt,
     SpreadsheetApp: { getActive: () => ({ getSheetByName: (name) => sheets[name] || null }) },
     LockService: { getScriptLock: () => lock },
+    Logger: { log() {} },
     ContentService: {
       MimeType: { JAVASCRIPT: 'js', JSON: 'json' },
       createTextOutput: () => ({ setMimeType() { return this; } }),
@@ -103,13 +107,24 @@ function testBackendLifecycle() {
   const { context, sheets, ids } = createBackendContext();
 
   assert.deepEqual(JSON.parse(JSON.stringify(context.validateCode('TOKEN-1'))), {
-    valid: true, id: 1, fio: 'Тестовый Сотрудник', usage: 'Не использован', timerEnabled: true,
+    valid: true, id: 1, fio: 'Тестовый Сотрудник', usage: 'Не использован',
+    timerEnabled: true, timerSeconds: 60,
   });
   assert.equal(context.validateCode('TOKEN-2').timerEnabled, false, 'снятый чекбокс отключает таймер');
+  assert.equal(context.validateCode('TOKEN-3').timerSeconds, 90, 'число в «Таймере» — персональная длительность');
+  assert.equal(context.validateCode('TOKEN-4').timerSeconds, 60, 'пустая ячейка — длительность из Settings');
+  const noSetting = createBackendContext();
+  noSetting.sheets.Settings.values.pop();
+  assert.equal(noSetting.context.validateCode('TOKEN-1').timerSeconds, 40, 'без Settings берётся запасное значение');
   const legacy = createBackendContext();
   legacy.sheets.Employees.values.forEach((row) => row.pop());
   assert.equal(legacy.context.validateCode('TOKEN-1').timerEnabled, true, 'без колонки сохраняется прежний таймер');
   assert.equal(employeeUsage(sheets), 'Не использован', 'вход не должен менять статус');
+
+  // Строка, в которой остался один ID (протянутая вниз разметка), — не сотрудник.
+  const report = context.validateSurvey();
+  assert.doesNotMatch(String(report), /999/, 'пустая строка с одним ID не считается сотрудником');
+  assert.doesNotMatch(String(context.auditQuestionSets()), /#999/, 'пустая строка не попадает в аудит наборов');
 
   assert.deepEqual(JSON.parse(JSON.stringify(context.getSurvey({}))), { ok: false, error: 'unauthorized' });
   assert.deepEqual(JSON.parse(JSON.stringify(context.getSurvey({ id: 1, code: 'WRONG' }))), { ok: false, error: 'unauthorized' });
@@ -689,7 +704,7 @@ function testWelcomeAndMascotLayoutGuards() {
   const sandbox = { window: {} };
   vm.runInNewContext(fs.readFileSync(path.join(root, 'js', 'config.js'), 'utf8'), sandbox);
   const knowledge = sandbox.window.CONFIG.blocks.find((block) => block.id === 'knowledge');
-  assert.equal(knowledge.timerSeconds, 20);
+  assert.equal(knowledge.timerSeconds, 40);
   assert.equal(sandbox.window.CONFIG.principleDelayMs, 500);
 
   for (const file of ['start.mp4', 'end.mp4']) {

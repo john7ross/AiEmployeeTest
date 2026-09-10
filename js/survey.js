@@ -4,13 +4,13 @@
  *   self      — самооценка (511): 4 варианта-уровня, тег level-*, без таймера;
  *   profile   — отношение/интерес/безопасность: A/B/C с портретными тегами
  *               + «Свой вариант» (свободный текст, без тега);
- *   knowledge — навыки (301–310): 4 варианта, правильный ответ, таймер 20 сек.
+ *   knowledge — навыки: 4 варианта, правильный ответ, таймер из таблицы.
  * Плюс: статус-бар, «назад» на один шаг, запись каждого ответа, сбор протокола.
  * ========================================================================= */
 window.Survey = (function () {
   const C = window.CONFIG;
   // Маркер «истёк таймер»: уходит в Results вместо пустой ячейки, чтобы
-  // «не знал» и «не успел за 20 секунд» не сливались в одно и то же.
+  // «не знал» и «не успел за отведённое время» не сливались в одно и то же.
   const TIMEOUT_MARK = 'TIMEOUT';
   let state = null;   // { user, questions, minAnswers, index, frontier, answers, done }
   let timerHandle = null;
@@ -201,7 +201,9 @@ window.Survey = (function () {
       el('q-hint').textContent = 'Ответ уже сохранён и недоступен для изменения.';
     }
 
-    if (useTimer) startTimer(bc.timerSeconds, () => onTimeout(q, bc));
+    // Длительность приходит из таблицы (персонально или Settings > timer_seconds).
+    // Значение в config.js — запасное, на случай старого backend.
+    if (useTimer) startTimer(state.user.timerSeconds || bc.timerSeconds, () => onTimeout(q, bc));
   }
 
   // --- ответы ---

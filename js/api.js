@@ -31,6 +31,35 @@ window.API = (function () {
     return readWithRetry({ action: 'validateCode', code });
   }
 
+  // --- Вход одним запросом: токен и весь опрос сразу. ---
+  // Два последовательных вызова Apps Script стоили десятки секунд ожидания.
+  // Если бэкенд старый и action ему незнаком, откатываемся на прежнюю пару.
+  async function login(code) {
+    if (C.DEMO_MODE) {
+      const info = await validateCode(code);
+      if (!info.valid) return { info, survey: null };
+      return { info, survey: await getSurvey({ id: info.id, code }) };
+    }
+    const res = await readWithRetry({ action: 'login', code });
+    if (res && res.error === 'unknown_action') {
+      const info = await validateCode(code);
+      if (!info.valid) return { info, survey: null };
+      return { info, survey: await getSurvey({ id: info.id, code }) };
+    }
+    if (!res || res.valid !== true) return { info: res || { valid: false, reason: 'not_found' }, survey: null };
+    if (res.ok !== true) throw new Error(res.error || 'Доступ к опросу не подтверждён');
+    return { info: res, survey: unpackSurvey(res) };
+  }
+
+  function unpackSurvey(res) {
+    return {
+      questions: res.questions || [],
+      principles: res.principles || C.principles,
+      prompt: res.prompt || C.aiPromptTemplate,
+      minAnswers: res.minAnswers || null,
+    };
+  }
+
   // --- Весь опрос из таблицы: повторная проверка ID + токена обязательна. ---
   async function getSurvey(user) {
     if (C.DEMO_MODE) {
@@ -39,15 +68,9 @@ window.API = (function () {
     if (!user || user.id == null || !user.code) throw new Error('Не заданы данные доступа к опросу');
     const res = await readWithRetry({ action: 'getSurvey', id: user.id, code: user.code });
     if (!res || res.ok !== true) throw new Error(res && res.error || 'Доступ к опросу не подтверждён');
-    const survey = {
-      questions: res.questions || [],
-      principles: res.principles || C.principles,
-      prompt: res.prompt || C.aiPromptTemplate,
-      // Порог minAnswers задаётся в таблице (Settings ▸ min_answers).
-      // Старый бэкенд его не присылает — тогда работают значения из config.js.
-      minAnswers: res.minAnswers || null,
-    };
-    return survey;
+    // Порог minAnswers задаётся в таблице (Settings ▸ min_answers).
+    // Старый бэкенд его не присылает — тогда работают значения из config.js.
+    return unpackSurvey(res);
   }
 
   // --- Запись одного ответа; первый сохранённый ответ ставит статус «Частично». ---
@@ -109,5 +132,5 @@ window.API = (function () {
       }
     }
   }
-  return { validateCode, getSurvey, saveAnswer, saveAnswers, finish };
+  return { login, validateCode, getSurvey, saveAnswer, saveAnswers, finish };
 })();

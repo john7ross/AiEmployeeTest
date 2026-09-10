@@ -35,7 +35,7 @@ window.App = (function () {
     submit.disabled = true;
     submit.textContent = 'Проверяем код…';
     try {
-      const res = await API.validateCode(code);
+      const { info: res, survey: loaded } = await API.login(code);
       if (!res.valid) {
         err.textContent = res.reason === 'used' ? 'Этот код уже использован.'
           : res.reason === 'excluded' ? 'Вы не участвуете в этой волне опроса.'
@@ -51,8 +51,14 @@ window.App = (function () {
         timerEnabled: res.timerEnabled !== false,
         timerSeconds: seconds > 0 ? seconds : null,
       };
-      submit.textContent = 'Загружаем вопросы…';
-      survey = await API.getSurvey(user);
+      // Вопросы приходят тем же запросом, что и проверка кода. Отдельный
+      // getSurvey остаётся только для старого бэкенда, где login неизвестен.
+      if (loaded) {
+        survey = loaded;
+      } else {
+        submit.textContent = 'Загружаем вопросы…';
+        survey = await API.getSurvey(user);
+      }
       if (Survey.getSaved(user, survey.questions)) show('screen-resume');
       else showWelcome();
     } catch (e) {

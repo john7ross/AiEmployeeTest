@@ -114,6 +114,18 @@ function testBackendLifecycle() {
   assert.equal(context.validateCode('TOKEN-2').timerEnabled, false, 'снятый чекбокс отключает таймер');
   assert.equal(context.validateCode('TOKEN-3').timerSeconds, 90, 'число в «Таймере» — персональная длительность');
   assert.equal(context.validateCode('TOKEN-4').timerSeconds, 60, 'пустая ячейка — длительность из Settings');
+  // Вход одним запросом: и вердикт по токену, и весь опрос.
+  const logged = JSON.parse(JSON.stringify(context.login({ code: 'TOKEN-1' })));
+  assert.equal(logged.valid, true);
+  assert.equal(logged.ok, true, 'login отдаёт опрос вместе с проверкой кода');
+  assert.equal(logged.timerSeconds, 60, 'таймер приходит тем же ответом');
+  assert.ok(Array.isArray(logged.questions) && logged.questions.length, 'вопросы приходят тем же ответом');
+  assert.ok(logged.principles && logged.minAnswers, 'принципы и пороги тоже');
+  assert.deepEqual(JSON.parse(JSON.stringify(context.login({ code: 'TOKEN-5' }))),
+    { valid: false, reason: 'excluded' }, 'login судит о токене по тем же правилам');
+  assert.deepEqual(JSON.parse(JSON.stringify(context.login({ code: 'НЕТ-ТАКОГО' }))),
+    { valid: false, reason: 'not_found' });
+
   const noSetting = createBackendContext();
   noSetting.sheets.Settings.values.pop();
   assert.equal(noSetting.context.validateCode('TOKEN-1').timerSeconds, 40, 'без Settings берётся запасное значение');

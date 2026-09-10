@@ -40,6 +40,7 @@ function doGet(e) {
   try {
     switch (p.action) {
       case 'validateCode': out = validateCode(p.code); break;
+      case 'login':        out = login(p); break;
       case 'getSurvey':    out = getSurvey(p); break;
       case 'getQuestions': out = getQuestionsForEmployee(p); break;
       case 'saveAnswer':   out = saveAnswer(p); break;
@@ -183,32 +184,68 @@ function hasActiveEmployeeCredentials(employeeId, code) {
   return false;
 }
 
-/* --- Проверка кода: завершённый токен блокируется, остальные можно продолжить. --- */
+/* --- Проверка кода: завершённый токен блокируется, остальные можно продолжить.
+ *
+ * Без script lock: это чистое чтение, а блокировка ставила все входы в очередь
+ * друг за другом — при одновременном старте волны люди ждали чужие запросы. --- */
 function validateCode(code) {
-  if (!code) return { valid: false, reason: 'empty' };
-  var lock = LockService.getScriptLock(); lock.waitLock(10000);
-  try {
-    var sh = sheet('Employees');
-    var data = sh.getDataRange().getValues();
-    var h = data[0];
-    var iId = colIndex(h, 'ID'), iFio = colIndex(h, 'ФИО'),
-        iTok = colIndex(h, 'Токен'), iUse = colIndex(h, 'Использование'),
-        iTimer = colIndex(h, 'Таймер');
-    for (var r = 1; r < data.length; r++) {
-      if (String(data[r][iTok]).trim() === String(code).trim()) {
-        var usage = iUse >= 0 ? String(data[r][iUse]).trim() : '';
-        if (isExcluded(usage)) return { valid: false, reason: 'excluded' };
-        if (usage.toLowerCase() === 'использован') return { valid: false, reason: 'used' };
-        var timer = iTimer < 0 ? { enabled: true, seconds: getDefaultTimerSeconds() }
-                                : parseTimerCell(data[r][iTimer]);
-        return {
-          valid: true, id: data[r][iId], fio: data[r][iFio], usage: usage,
-          timerEnabled: timer.enabled, timerSeconds: timer.seconds
-        };
-      }
-    }
-    return { valid: false, reason: 'not_found' };
-  } finally { lock.releaseLock(); }
+  return lookupByToken(code).info;
+}
+
+/* Одно чтение Employees -> и вердикт по токену, и строка сотрудника.
+ * Общий кусок для validateCode и login, чтобы правила входа не разъехались. */
+function lookupByToken(code) {
+  if (!code) return { info: { valid: false, reason: 'empty' }, row: null };
+  var data = sheet('Employees').getDataRange().getValues();
+  var h = data[0];
+  var iId = colIndex(h, 'ID'), iFio = colIndex(h, 'ФИО'),
+      iTok = colIndex(h, 'Токен'), iUse = colIndex(h, 'Использование'),
+      iTimer = colIndex(h, 'Таймер');
+  for (var r = 1; r < data.length; r++) {
+    if (String(data[r][iTok]).trim() !== String(code).trim()) continue;
+    var usage = iUse >= 0 ? String(data[r][iUse]).trim() : '';
+    if (isExcluded(usage)) return { info: { valid: false, reason: 'excluded' }, row: null };
+    if (usage.toLowerCase() === 'использован') return { info: { valid: false, reason: 'used' }, row: null };
+    var timer = iTimer < 0 ? { enabled: true, seconds: getDefaultTimerSeconds() }
+                            : parseTimerCell(data[r][iTimer]);
+    return {
+      info: {
+        valid: true, id: data[r][iId], fio: data[r][iFio], usage: usage,
+        timerEnabled: timer.enabled, timerSeconds: timer.seconds
+      },
+      row: data[r]
+    };
+  }
+  return { info: { valid: false, reason: 'not_found' }, row: null };
+}
+
+/* --- Вход одним запросом: проверка токена + весь опрос.
+ *
+ * Раньше frontend делал два вызова подряд, а внутри второго учётные данные
+ * проверялись третьим полным чтением листа. Каждый вызов Apps Script стоит
+ * несколько секунд сам по себе, поэтому вход занимал десятки секунд и выглядел
+ * зависшим. Здесь лист читается один раз, и токен повторно не перепроверяется:
+ * он только что проверен в этом же запросе. --- */
+function login(p) {
+  var found = lookupByToken(p.code);
+  if (!found.info.valid) return found.info;
+  var questions = getQuestions(found.info.id);
+  if (!questions.length) {
+    return withFields(found.info, { ok: false, error: 'no_active_questions' });
+  }
+  return withFields(found.info, {
+    ok: true, questions: questions, principles: getPrinciples(),
+    prompt: getSetting('prompt'), minAnswers: getMinAnswers()
+  });
+}
+
+/* Копия объекта с добавленными полями. Своя, чтобы не зависеть от того,
+ * какой рантайм включён у проекта Apps Script. */
+function withFields(base, extra) {
+  var out = {}, k;
+  for (k in base) if (Object.prototype.hasOwnProperty.call(base, k)) out[k] = base[k];
+  for (k in extra) if (Object.prototype.hasOwnProperty.call(extra, k)) out[k] = extra[k];
+  return out;
 }
 
 /* --- Весь опрос из таблицы: только после повторной проверки ID + токена. --- */

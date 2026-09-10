@@ -106,7 +106,7 @@ window.Survey = (function () {
     const reviewingKnowledge = q.block === 'knowledge' && !!answered && !isFrontier;
     const useTimer = state.user.timerEnabled !== false && !!bc.timed && !reviewingKnowledge;
     if (useTimer) resumeTimer(q, bc);
-    renderBody(q, bc, answered, useTimer, reviewingKnowledge, useTimer ? secondsLeft(q, bc) : null);
+    renderBody(q, bc, answered, useTimer, reviewingKnowledge);
   }
 
   /* Время на вопрос живёт в состоянии, а не в отрисовке, и имеет два режима:
@@ -195,7 +195,7 @@ window.Survey = (function () {
     render();
   }
 
-  function renderBody(q, bc, answered, useTimer, reviewingKnowledge, remaining) {
+  function renderBody(q, bc, answered, useTimer, reviewingKnowledge) {
     const body = el('q-body');
     body.innerHTML = '';
     el('q-hint').textContent = '';
@@ -258,8 +258,8 @@ window.Survey = (function () {
     }
 
     // Отсчёт продолжается с того места, где остановился: длительность приходит
-    // из таблицы, а остаток считается от срока этого вопроса.
-    if (useTimer) startTimer(remaining, () => onTimeout(q, bc));
+    // из таблицы, а остаток каждый раз считается от срока этого вопроса.
+    if (useTimer) startTimer(() => secondsLeft(q, bc), () => onTimeout(q, bc));
   }
 
   // --- ответы ---
@@ -491,14 +491,22 @@ window.Survey = (function () {
   }
 
   // --- таймер ---
-  function startTimer(seconds, onEnd) {
+  // Цифра на экране читается из того же источника, что и решение о таймауте, —
+  // из срока вопроса. Раньше она была отдельным счётчиком тиков, а браузер
+  // придерживает setInterval в фоновой или неактивной вкладке: тики отстают,
+  // Date.now() — нет. Человек уходил на предыдущий вопрос с одним числом,
+  // возвращался с меньшим и справедливо считал, что время не замерло.
+  function startTimer(remainingSeconds, onEnd) {
     const t = el('q-timer');
     t.classList.remove('hidden');
-    let left = seconds; t.textContent = left;
-    timerHandle = setInterval(() => {
-      left -= 1; t.textContent = left;
+    const paint = () => {
+      const left = Math.max(0, remainingSeconds());
+      t.textContent = left;
       if (left <= 0) { stopTimer(); onEnd(); }
-    }, 1000);
+    };
+    paint();
+    if (timerHandle) return;
+    timerHandle = setInterval(paint, 250);
   }
   function stopTimer() { if (timerHandle) { clearInterval(timerHandle); timerHandle = null; } }
 

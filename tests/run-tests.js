@@ -542,6 +542,7 @@ function testKnowledgeReviewNavigation() {
   const stage = new FakeElement();
   const storage = new Map();
   let timerStarts = 0;
+  let timerTick = null;
   // Управляемые часы: без них «прошло 18 секунд» в тесте не выразить.
   let clock = 1700000000000;
   const ClockDate = Object.assign(function DateStub(...args) { return new Date(...args); },
@@ -583,10 +584,11 @@ function testKnowledgeReviewNavigation() {
     console,
     Date: ClockDate,
     Promise,
-    setInterval: () => { timerStarts += 1; return timerStarts; },
-    clearInterval: () => {},
+    setInterval: (fn) => { timerStarts += 1; timerTick = fn; return timerStarts; },
+    clearInterval: () => { timerTick = null; },
   });
   vm.runInContext(fs.readFileSync(path.join(root, 'js', 'survey.js'), 'utf8'), context);
+  const paintTimer = () => { if (timerTick) timerTick(); };
 
   const questions = [
     { id: '101', block: 'attitude', type: 'profile', text: 'Отношение 101', options: [{ key: 'A', text: 'Ответ A' }] },
@@ -634,6 +636,12 @@ function testKnowledgeReviewNavigation() {
   assert.equal(timerStarts, 4, 'после возврата на текущий вопрос отсчёт возобновляется');
   assert.equal(elements['q-timer'].textContent, 8,
     'осталось ровно то, что было на момент ухода: 12 секунд потрачено, минута просмотра не считается');
+
+  // Цифра берётся из часов, а не из числа тиков: в неактивной вкладке браузер
+  // придерживает setInterval, и счётчик тиков разошёлся бы с реальным временем.
+  clock += 3000;
+  paintTimer();
+  assert.equal(elements['q-timer'].textContent, 5, 'показ пересчитывается от срока вопроса');
   assert.equal(elements['q-timer'].classList.contains('hidden'), false);
   assert.equal(elements['q-body'].children.length, 1, 'на текущем вопросе кнопка возврата не показывается');
 

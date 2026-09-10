@@ -198,6 +198,16 @@ function testBackendLifecycle() {
   const firstSave = context.saveAnswer({ id: 1, code: 'TOKEN-1', questionId: ids[0], answer: 'A' });
   assert.equal(firstSave.ok, true);
   assert.equal(employeeUsage(sheets), 'Частично');
+
+  // Повтор фонового сохранения после сетевого таймаута не должен плодить строки:
+  // иначе один потерянный JSONP-ответ навсегда задваивает вопрос в статистике.
+  const rowsAfterFirst = sheets.Results.values.length;
+  const repeatedSave = context.saveAnswer({ id: 1, code: 'TOKEN-1', questionId: ids[0], answer: 'B' });
+  assert.equal(repeatedSave.ok, true);
+  assert.equal(repeatedSave.updated, true, 'повтор обновляет строку, а не добавляет новую');
+  assert.equal(sheets.Results.values.length, rowsAfterFirst, 'повтор saveAnswer не добавляет строку');
+  const savedRow = sheets.Results.values.find((row) => String(row[1]) === String(ids[0]));
+  assert.equal(savedRow[2], 'B', 'в строке остаётся последний присланный ответ');
   assert.equal(context.validateCode('TOKEN-1').valid, true, 'частичный токен разрешён для продолжения');
 
   const incomplete = context.finish({ id: 1, code: 'TOKEN-1', results: JSON.stringify({}) });

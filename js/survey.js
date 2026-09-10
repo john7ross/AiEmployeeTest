@@ -258,10 +258,13 @@ window.Survey = (function () {
         if (!saved || !saved.ok) throw new Error('Ответ ' + q.id + ' не сохранён');
       })
       .catch((error) => {
+        // Ответ НЕ потерян: он уже лежит в state.answers и в localStorage, а в
+        // конце опроса уйдёт одним идемпотентным finish. Поэтому здесь не пугаем
+        // человека, которому всё равно нечего сделать: блиц не даёт переотвечать.
         saveError = error;
         console.warn('Background save failed', error);
         const hint = el('q-hint');
-        if (hint) hint.textContent = 'Один из ответов не сохранился. Проверьте соединение.';
+        if (hint) hint.textContent = 'Ответ сохранён на устройстве, отправим его в конце опроса.';
       });
   }
 

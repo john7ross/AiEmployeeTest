@@ -452,14 +452,32 @@ function getQuestions(employeeId) {
   return out;
 }
 
-/* --- Один ответ -> лог в Results; первый ответ переводит токен в «Частично». --- */
+/* --- Один ответ -> лог в Results; первый ответ переводит токен в «Частично».
+ *
+ * ИДЕМПОТЕНТНО: если строка по этому сотруднику, вопросу и текущей волне уже
+ * есть — она обновляется, а не добавляется вторая. Это нужно ради повтора
+ * запроса из фронтенда: JSONP не отличает «не дошёл запрос» от «потерялся
+ * ответ», и без обновления повтор после таймаута плодил бы дубли, которые
+ * потом врут в статистике. --- */
 function saveAnswer(p) {
   var lock = LockService.getScriptLock(); lock.waitLock(10000);
   try {
     if (!hasActiveEmployeeCredentials(p.id, p.code)) return { ok: false, reason: 'invalid_credentials' };
+    var questionId = normalizeQuestionId(p.questionId);
     var m = resultsMeta();
-    m.sheet.appendRow(resultRow(p.id, p.questionId, p.answer == null ? '' : p.answer,
-                                new Date(), m.iWave, getWave(), m.width));
+    var wave = getWave();
+    var answer = p.answer == null ? '' : p.answer;
+    var data = m.sheet.getDataRange().getValues();
+    for (var r = data.length - 1; r >= 1; r--) {
+      if (String(data[r][0]) !== String(p.id)) continue;
+      if (normalizeQuestionId(data[r][1]) !== questionId) continue;
+      if (!rowInWave(data[r], m.iWave, wave)) continue;
+      m.sheet.getRange(r + 1, 1, 1, m.width)
+             .setValues([resultRow(p.id, questionId, answer, new Date(), m.iWave, wave, m.width)]);
+      setUsage(p.id, 'Частично', false);
+      return { ok: true, updated: true };
+    }
+    m.sheet.appendRow(resultRow(p.id, questionId, answer, new Date(), m.iWave, wave, m.width));
     setUsage(p.id, 'Частично', false);
     return { ok: true };
   } finally { lock.releaseLock(); }

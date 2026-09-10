@@ -28,7 +28,12 @@ window.App = (function () {
     err.classList.add('hidden');
     if (!code) return;
 
-    el('code-submit').disabled = true;
+    // Apps Script просыпается небыстро: без этих подписей экран выглядит
+    // зависшим, а человек жмёт «Войти» ещё раз и плодит параллельные запросы.
+    const submit = el('code-submit');
+    const label = submit.textContent;
+    submit.disabled = true;
+    submit.textContent = 'Проверяем код…';
     try {
       const res = await API.validateCode(code);
       if (!res.valid) {
@@ -46,6 +51,7 @@ window.App = (function () {
         timerEnabled: res.timerEnabled !== false,
         timerSeconds: seconds > 0 ? seconds : null,
       };
+      submit.textContent = 'Загружаем вопросы…';
       survey = await API.getSurvey(user);
       if (Survey.getSaved(user, survey.questions)) show('screen-resume');
       else showWelcome();
@@ -61,7 +67,8 @@ window.App = (function () {
       }
       err.classList.remove('hidden');
     } finally {
-      el('code-submit').disabled = false;
+      submit.disabled = false;
+      submit.textContent = label;
     }
   }
 

@@ -51,10 +51,21 @@ window.API = (function () {
   }
 
   // --- Запись одного ответа; первый сохранённый ответ ставит статус «Частично». ---
-  function saveAnswer(payload) {
+  // Повтор безопасен: backend обновляет строку этого вопроса, а не добавляет вторую.
+  // Один потерянный JSONP-ответ на медленном Apps Script — обычное дело, и без
+  // повтора он раньше отключал фоновую запись до конца опроса.
+  async function saveAnswer(payload) {
     if (C.DEMO_MODE) { console.log('[demo] saveAnswer', payload); return Promise.resolve({ ok: true }); }
-    return jsonp(Object.assign({ action: 'saveAnswer' }, serialize(payload)))
-      .catch((e) => { console.warn('saveAnswer failed', e); return { ok: false }; });
+    const params = Object.assign({ action: 'saveAnswer' }, serialize(payload));
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const res = await jsonp(params, 20000);
+        if (res && res.ok === true) return res;
+      } catch (error) {
+        console.warn('saveAnswer attempt failed', attempt + 1, error);
+      }
+    }
+    return { ok: false };
   }
 
   // --- Идемпотентная финальная синхронизация всех локальных ответов. ---

@@ -892,10 +892,19 @@ function validateSurvey() {
     if (!fio) problems.push('Employees, ID ' + id + ': нет ФИО');
     if (seenId[id]) problems.push('Employees: ID ' + id + ' встречается дважды');
     seenId[id] = true;
-    if (isExcluded(ed[r2][iUseV])) { excluded.push(id + ' ' + fio); continue; }
-    if (!tok) { warnings.push('ID ' + id + ' (' + fio + ') без токена — опрос пройти не сможет'); continue; }
+    // Выведенный из волны в число активных не идёт и об отсутствии токена по нему
+    // не предупреждаем. Но его токен всё равно проверяем на совпадение: одинаковый
+    // токен у выведенного и у действующего заблокировал бы вход действующему —
+    // validateCode отдаёт первую попавшуюся строку с этим токеном.
+    var isOut = isExcluded(ed[r2][iUseV]);
+    if (isOut) excluded.push(id + ' ' + fio);
+    if (!tok) {
+      if (!isOut) warnings.push('ID ' + id + ' (' + fio + ') без токена — опрос пройти не сможет');
+      continue;
+    }
     if (seenTok[tok]) problems.push('Employees: токен ID ' + id + ' совпадает с токеном ID ' + seenTok[tok]);
     seenTok[tok] = id;
+    if (isOut) continue;
     active++;
   }
 

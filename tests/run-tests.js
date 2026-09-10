@@ -129,6 +129,10 @@ function testBackendLifecycle() {
     { ok: false, error: 'unauthorized' }, 'и не получает вопросы в обход входа');
   assert.match(String(context.validateSurvey()), /Не участвуют в волне \(1\)/, 'проверка называет выведенных отдельно');
   assert.doesNotMatch(String(context.auditQuestionSets()), /#5 /, 'выведенный не попадает в аудит наборов');
+  const clash = createBackendContext();
+  clash.sheets.Employees.values[1][4] = 'TOKEN-5';   // токен действующего совпал с токеном выведенного
+  assert.match(String(clash.context.validateSurvey()), /совпадает с токеном/,
+    'совпадение токена с выведенным из волны не должно проходить молча');
 
   // Строка, в которой остался один ID (протянутая вниз разметка), — не сотрудник.
   const report = context.validateSurvey();

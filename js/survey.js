@@ -45,6 +45,7 @@ window.Survey = (function () {
       user, questions, minAnswers: minAnswers || null,
       questionSetKey: makeQuestionSetKey(questions),
       index: 0, frontier: 0, answers: {}, done: false, knowledgeIntroSeen: false,
+      deadlines: {},
     };
     resetSaveQueue();
     persist();
@@ -64,6 +65,11 @@ window.Survey = (function () {
     const bc = blockCfg(q.block);
     const answered = state.answers[q.id];
     const isFrontier = state.index === state.frontier;
+    if (expiredOnArrival(q, bc, answered, isFrontier)) {
+      submitting = false;
+      onTimeout(q, bc);
+      return;
+    }
 
     // Первые 32 маскота уникальны, затем набор циклически повторяется.
     const pos = POS[state.index % POS.length];
@@ -99,7 +105,29 @@ window.Survey = (function () {
     // уже отвеченного вопроса ответ остаётся заблокированным, но таймер не нужен.
     const reviewingKnowledge = q.block === 'knowledge' && !!answered && !isFrontier;
     const useTimer = state.user.timerEnabled !== false && !!bc.timed && !reviewingKnowledge;
-    renderBody(q, bc, answered, useTimer, reviewingKnowledge);
+    renderBody(q, bc, answered, useTimer, reviewingKnowledge, useTimer ? secondsLeft(q, bc) : null);
+  }
+
+  // Срок ответа привязан к вопросу, а не к отрисовке. Иначе отсчёт обнулялся при
+  // каждом возврате к вопросу: шаг назад и обратно — и снова полные 40 секунд.
+  // Срок ставится один раз, живёт в сохранённом прогрессе и переживает F5.
+  function deadlineFor(q, bc) {
+    const total = Number(state.user.timerSeconds) > 0 ? Number(state.user.timerSeconds) : bc.timerSeconds;
+    if (!state.deadlines) state.deadlines = {};
+    if (!state.deadlines[q.id]) {
+      state.deadlines[q.id] = Date.now() + total * 1000;
+      persist();
+    }
+    return state.deadlines[q.id];
+  }
+  function secondsLeft(q, bc) {
+    return Math.ceil((deadlineFor(q, bc) - Date.now()) / 1000);
+  }
+  // Вопрос, у которого срок истёк, пока вкладка была закрыта или свёрнута.
+  function expiredOnArrival(q, bc, answered, isFrontier) {
+    if (answered || !isFrontier) return false;
+    if (state.user.timerEnabled === false || !bc.timed) return false;
+    return secondsLeft(q, bc) <= 0;
   }
 
   function mascotUrl(index) {
@@ -139,7 +167,7 @@ window.Survey = (function () {
     render();
   }
 
-  function renderBody(q, bc, answered, useTimer, reviewingKnowledge) {
+  function renderBody(q, bc, answered, useTimer, reviewingKnowledge, remaining) {
     const body = el('q-body');
     body.innerHTML = '';
     el('q-hint').textContent = '';
@@ -201,9 +229,9 @@ window.Survey = (function () {
       el('q-hint').textContent = 'Ответ уже сохранён и недоступен для изменения.';
     }
 
-    // Длительность приходит из таблицы (персонально или Settings > timer_seconds).
-    // Значение в config.js — запасное, на случай старого backend.
-    if (useTimer) startTimer(state.user.timerSeconds || bc.timerSeconds, () => onTimeout(q, bc));
+    // Отсчёт продолжается с того места, где остановился: длительность приходит
+    // из таблицы, а остаток считается от срока этого вопроса.
+    if (useTimer) startTimer(remaining, () => onTimeout(q, bc));
   }
 
   // --- ответы ---
@@ -475,6 +503,9 @@ window.Survey = (function () {
       questionSetKey: makeQuestionSetKey(questions), index: s.index, frontier: s.frontier,
       answers: s.answers || {}, done: false,
       knowledgeIntroSeen: s.knowledgeIntroSeen === true,
+      // Сроки ответа переживают перезагрузку: иначе F5 обнулял бы отсчёт так же,
+      // как это делал возврат на шаг назад.
+      deadlines: s.deadlines || {},
     };
     resetSaveQueue();
     show('screen-survey');

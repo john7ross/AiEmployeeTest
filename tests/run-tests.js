@@ -542,6 +542,10 @@ function testKnowledgeReviewNavigation() {
   const stage = new FakeElement();
   const storage = new Map();
   let timerStarts = 0;
+  // Управляемые часы: без них «прошло 18 секунд» в тесте не выразить.
+  let clock = 1700000000000;
+  const ClockDate = Object.assign(function DateStub(...args) { return new Date(...args); },
+    { now: () => clock });
 
   const windowObject = {
     CONFIG: {
@@ -577,7 +581,7 @@ function testKnowledgeReviewNavigation() {
       setItem: (key, value) => storage.set(key, value),
     },
     console,
-    Date,
+    Date: ClockDate,
     Promise,
     setInterval: () => { timerStarts += 1; return timerStarts; },
     clearInterval: () => {},
@@ -619,11 +623,16 @@ function testKnowledgeReviewNavigation() {
   const returnButton = elements['q-body'].children[1];
   assert.equal(returnButton.textContent, 'Вернуться к текущему вопросу');
 
+  // Отсчёт на текущем вопросе идёт от его срока. Иначе шаг назад и обратно
+  // за секунду до конца давал бы полные 40 секунд, и так до бесконечности.
+  clock += 18000;
   returnButton.onclick();
   assert.equal(elements['q-text'].textContent, 'Знания 302');
-  assert.equal(timerStarts, 4, 'после возврата на текущий вопрос таймер запускается заново');
+  assert.equal(timerStarts, 4, 'после возврата на текущий вопрос отсчёт возобновляется');
+  assert.equal(elements['q-timer'].textContent, 2, 'возврат не обнуляет отсчёт: осталось 2 секунды из 20');
   assert.equal(elements['q-timer'].classList.contains('hidden'), false);
   assert.equal(elements['q-body'].children.length, 1, 'на текущем вопросе кнопка возврата не показывается');
+
 
   timerStarts = 0;
   windowObject.Survey.start({ id: 2, code: 'NO-TIMER', fio: 'Без таймера', timerEnabled: false }, questions);

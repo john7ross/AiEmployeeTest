@@ -499,13 +499,18 @@ window.Survey = (function () {
   function startTimer(remainingSeconds, onEnd) {
     const t = el('q-timer');
     t.classList.remove('hidden');
+    // ended защищает от повторного onEnd: истёкшее время закрывает вопрос ровно
+    // один раз. Без флага первый же paint мог выстрелить таймаутом, вернуться
+    // сюда и завести интервал на уже покинутый вопрос — тот дёргал бы переход
+    // дальше на каждом тике.
+    let ended = false;
     const paint = () => {
       const left = Math.max(0, remainingSeconds());
       t.textContent = left;
-      if (left <= 0) { stopTimer(); onEnd(); }
+      if (left <= 0 && !ended) { ended = true; stopTimer(); onEnd(); }
     };
     paint();
-    if (timerHandle) return;
+    if (ended || timerHandle) return;
     timerHandle = setInterval(paint, 250);
   }
   function stopTimer() { if (timerHandle) { clearInterval(timerHandle); timerHandle = null; } }
@@ -527,7 +532,13 @@ window.Survey = (function () {
       if (!raw) return null;
       const s = JSON.parse(raw);
       const savedSetKey = s && (s.questionSetKey || makeQuestionSetKey(s.questions));
-      return (s && s.user && s.user.code === user.code && !s.done && s.index > 0 &&
+      // Начатым считается проход, где уже пошло время первого вопроса, а не только
+      // тот, где сменился номер. Иначе перезагрузка на первом вопросе начинала всё
+      // заново и обнуляла его отсчёт — сколько угодно раз.
+      const started = s && (s.index > 0 ||
+        Object.keys(s.answers || {}).length > 0 ||
+        Object.keys(s.timers || {}).length > 0);
+      return (s && s.user && s.user.code === user.code && !s.done && started &&
         savedSetKey === makeQuestionSetKey(questions)) ? s : null;
     } catch { return null; }
   }

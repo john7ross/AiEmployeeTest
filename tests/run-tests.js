@@ -666,6 +666,56 @@ function testKnowledgeReviewNavigation() {
   assert.equal(elements['q-mascot'].src, 'assets/mascot/1.png', 'после 32 вопросов маскоты циклически повторяются');
 }
 
+function testReloadOnFirstQuestionKeepsTimer() {
+  // Перезагрузка на первом вопросе не должна начинать проход заново: иначе
+  // отсчёт первого вопроса обнуляется сколько угодно раз.
+  const ids = ['q-body', 'q-hint', 'q-timer', 'back-btn', 'progress', 'progress-fill', 'q-text', 'q-mascot', 'screen-survey', 'knowledge-notice', 'knowledge-notice-ok'];
+  const elements = Object.fromEntries(ids.map((id) => [id, new FakeElement()]));
+  const stage = new FakeElement();
+  const storage = new Map();
+  const windowObject = {
+    CONFIG: {
+      progressKey: 'reload-progress',
+      blocks: [{ id: 'knowledge', timed: true, timerSeconds: 30, scored: true }],
+      selfScore: {},
+      portrait: { dimensions: {}, scores: {}, thresholds: [] },
+    },
+    API: { saveAnswer: () => Promise.resolve({ ok: true }), saveAnswers: () => Promise.resolve({ ok: true }), finish: () => Promise.resolve({ ok: true }) },
+    App: { showThanks() {} },
+  };
+  windowObject.window = windowObject;
+  const context = vm.createContext({
+    window: windowObject,
+    API: windowObject.API,
+    App: windowObject.App,
+    document: {
+      getElementById: (id) => elements[id],
+      querySelector: (s) => s === '.survey-stage' ? stage : null,
+      querySelectorAll: (s) => s === '.screen' ? [elements['screen-survey']] : [],
+      createElement: () => new FakeElement(),
+    },
+    localStorage: { getItem: (k) => storage.get(k) ?? null, setItem: (k, v) => storage.set(k, v) },
+    console, Date, Promise,
+    setInterval: () => 1,
+    clearInterval: () => {},
+  });
+  vm.runInContext(fs.readFileSync(path.join(root, 'js', 'survey.js'), 'utf8'), context);
+
+  const questions = [
+    { id: '601', block: 'knowledge', type: 'knowledge', text: 'Первый', correct: 'A', options: [{ key: 'A', text: 'A' }] },
+    { id: '602', block: 'knowledge', type: 'knowledge', text: 'Второй', correct: 'A', options: [{ key: 'A', text: 'A' }] },
+  ];
+  const user = { id: 1, code: 'RELOAD', fio: 'Тест', timerEnabled: true, timerSeconds: 30 };
+  windowObject.Survey.start(user, questions);
+  windowObject.Survey.confirmKnowledgeIntro();
+  assert.equal(elements['q-text'].textContent, 'Первый');
+
+  // Ещё ничего не отвечено и номер вопроса нулевой — но время уже пошло.
+  const saved = windowObject.Survey.getSaved(user, questions);
+  assert.ok(saved, 'перезагрузка на первом вопросе предлагает продолжить, а не начать заново');
+  assert.ok(saved.timers && saved.timers['601'], 'срок первого вопроса сохранён');
+}
+
 function testRestartButtonRemoved() {
   const html = fs.readFileSync(path.join(root, 'index.html'), 'utf8');
   const app = fs.readFileSync(path.join(root, 'js', 'app.js'), 'utf8');
@@ -774,6 +824,7 @@ function testWelcomeAndMascotLayoutGuards() {
   await testFrontendSaveOrderingAndLayout();
   await testFrontendBatchRecoveryAfterSaveFailure();
   testKnowledgeReviewNavigation();
+  testReloadOnFirstQuestionKeepsTimer();
   testRestartButtonRemoved();
   testProductionConfig();
   testWelcomeAndMascotLayoutGuards();

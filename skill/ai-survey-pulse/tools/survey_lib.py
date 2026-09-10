@@ -543,12 +543,25 @@ def emp_id(rec):
         return None
 
 
+# Третье значение колонки «Использование»: человек остаётся в таблице со всей
+# своей историей, но в текущей волне не участвует (ушёл из отдела и т.п.).
+# В разборе ПРОШЛОЙ волны он при этом считается: там решает архив, а не текущий
+# статус, — см. select_wave().
+EXCLUDED_STATUS = "не участвует"
+
+
+def is_excluded(employee):
+    return str(employee.get("Использование", "")).strip().lower() == EXCLUDED_STATUS
+
+
 def completed_ids(data):
     """IDs of employees who finished (status contains 'Использован', not 'Не'), excluding test profiles."""
     test = set(CFG["test_employee_ids"])
     out = []
     for e in data["employees"]:
         eid = emp_id(e)
+        if is_excluded(e):
+            continue
         status = str(e.get("Использование", "")).strip().lower()
         done = ("использован" in status) and ("не использован" not in status)
         if done and eid not in test:
@@ -561,7 +574,7 @@ def not_completed(data):
     out = []
     for e in data["employees"]:
         eid = emp_id(e)
-        if eid in test:
+        if eid in test or is_excluded(e):
             continue
         status = str(e.get("Использование", "")).strip().lower()
         if "не использован" in status or status == "":

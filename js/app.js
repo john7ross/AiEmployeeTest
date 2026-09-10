@@ -33,6 +33,7 @@ window.App = (function () {
       const res = await API.validateCode(code);
       if (!res.valid) {
         err.textContent = res.reason === 'used' ? 'Этот код уже использован.'
+          : res.reason === 'excluded' ? 'Вы не участвуете в этой волне опроса.'
           : 'Код не найден. Проверьте правильность ввода.';
         err.classList.remove('hidden');
         return;

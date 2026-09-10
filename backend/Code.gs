@@ -177,6 +177,7 @@ function hasActiveEmployeeCredentials(employeeId, code) {
     if (String(data[r][iId]) !== String(employeeId) ||
         String(data[r][iTok]).trim() !== String(code).trim()) continue;
     var usage = iUse >= 0 ? String(data[r][iUse]).trim().toLowerCase() : '';
+    if (isExcluded(usage)) return false;
     return usage !== 'использован';
   }
   return false;
@@ -196,6 +197,7 @@ function validateCode(code) {
     for (var r = 1; r < data.length; r++) {
       if (String(data[r][iTok]).trim() === String(code).trim()) {
         var usage = iUse >= 0 ? String(data[r][iUse]).trim() : '';
+        if (isExcluded(usage)) return { valid: false, reason: 'excluded' };
         if (usage.toLowerCase() === 'использован') return { valid: false, reason: 'used' };
         var timer = iTimer < 0 ? { enabled: true, seconds: getDefaultTimerSeconds() }
                                 : parseTimerCell(data[r][iTimer]);
@@ -245,6 +247,25 @@ function getSetting(key) {
     }
   }
   return '';
+}
+
+/* =========================================================================
+ * «НЕ УЧАСТВУЕТ» — сотрудник остаётся в таблице, но выпадает из волны
+ *
+ * Третье значение колонки «Использование». Ставится тем, кто ушёл из отдела
+ * или по любой причине не проходит опросы. Такой человек:
+ *   - не может войти по своему токену;
+ *   - не сбрасывается и не архивируется при startNewWave();
+ *   - не попадает ни в участников, ни в список «не прошли» у аналитики.
+ *
+ * Строку при этом НЕ удаляют: на ID сотрудника завязаны его ответы в Results,
+ * архив прошлых волн в Employees_history и отметки на листе Usages. Удалённая
+ * строка уносит человека из разбора прошлых волн, хотя архив никуда не делся.
+ * ========================================================================= */
+var EXCLUDED_STATUS = 'Не участвует';
+
+function isExcluded(value) {
+  return String(value == null ? '' : value).trim().toLowerCase() === EXCLUDED_STATUS.toLowerCase();
 }
 
 /* =========================================================================
@@ -518,6 +539,7 @@ function setUsage(employeeId, value, overwriteUsed) {
   for (var r = 1; r < data.length; r++) {
     if (String(data[r][iId]) !== String(employeeId)) continue;
     var current = String(data[r][iUse]).trim().toLowerCase();
+    if (isExcluded(current)) return false;   // выведенного из волны не возвращаем в неё записью ответа
     if (overwriteUsed || current !== 'использован') sh.getRange(r + 1, iUse + 1).setValue(value);
     return true;
   }
@@ -757,6 +779,7 @@ function auditQuestionSets() {
   var data = sh.getDataRange().getValues();
   var h = data[0];
   var iId = colIndex(h, 'ID'), iFio = colIndex(h, 'ФИО');
+  var iUseAudit = colIndex(h, 'Использование');
   var mins = getMinAnswers();
   var lines = [];
   var problems = [];
@@ -768,6 +791,7 @@ function auditQuestionSets() {
     if (id === '' || id == null) continue;
     // Пустая строка с одним ID — не сотрудник, см. validateSurvey.
     if (iFio >= 0 && String(data[r][iFio] == null ? '' : data[r][iFio]).trim() === '') continue;
+    if (iUseAudit >= 0 && isExcluded(data[r][iUseAudit])) continue;
     var ids = getQuestions(id).map(function (q) { return q.id; });
     var have = {};
     ids.forEach(function (q) { have[q] = true; });
@@ -854,7 +878,8 @@ function validateSurvey() {
   var ed = sheet('Employees').getDataRange().getValues();
   var eh = ed[0] || [];
   var iId = colIndex(eh, 'ID'), iFio = colIndex(eh, 'ФИО'), iTok = colIndex(eh, 'Токен');
-  var seenId = {}, seenTok = {}, active = 0;
+  var iUseV = colIndex(eh, 'Использование');
+  var seenId = {}, seenTok = {}, active = 0, excluded = [];
   for (var r2 = 1; r2 < ed.length; r2++) {
     var id = String(ed[r2][iId] == null ? '' : ed[r2][iId]).trim();
     var fio = String(ed[r2][iFio] == null ? '' : ed[r2][iFio]).trim();
@@ -867,6 +892,7 @@ function validateSurvey() {
     if (!fio) problems.push('Employees, ID ' + id + ': нет ФИО');
     if (seenId[id]) problems.push('Employees: ID ' + id + ' встречается дважды');
     seenId[id] = true;
+    if (isExcluded(ed[r2][iUseV])) { excluded.push(id + ' ' + fio); continue; }
     if (!tok) { warnings.push('ID ' + id + ' (' + fio + ') без токена — опрос пройти не сможет'); continue; }
     if (seenTok[tok]) problems.push('Employees: токен ID ' + id + ' совпадает с токеном ID ' + seenTok[tok]);
     seenTok[tok] = id;
@@ -890,6 +916,10 @@ function validateSurvey() {
         if (!seenId[String(parseInt(uid, 10))]) warnings.push('Usages: ID ' + uid + ' («' + ufio + '») нет в Employees');
       }
     }
+  }
+
+  if (excluded.length) {
+    warnings.push('Не участвуют в волне (' + excluded.length + '): ' + excluded.join('; '));
   }
 
   // --- Settings и волны ---

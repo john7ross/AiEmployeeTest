@@ -72,6 +72,7 @@ function createBackendContext() {
       [2, 'Без таймера', 'Отдел', 'Роль', 'TOKEN-2', 'Не использован', '', '', '', '', '', '', '', '', false],
       [3, 'Свой таймер', 'Отдел', 'Роль', 'TOKEN-3', 'Не использован', '', '', '', '', '', '', '', '', 90],
       [4, 'Пустой таймер', 'Отдел', 'Роль', 'TOKEN-4', 'Не использован', '', '', '', '', '', '', '', '', ''],
+      [5, 'Ушёл из отдела', 'Отдел', 'Роль', 'TOKEN-5', 'Не участвует', '', '', '', '', '', '', '', '', true],
       [999, '', '', '', '', 'Не использован', '', '', '', '', '', '', '', 'Конформист', true],
     ]),
     Questions: new MockSheet(questions),
@@ -120,6 +121,14 @@ function testBackendLifecycle() {
   legacy.sheets.Employees.values.forEach((row) => row.pop());
   assert.equal(legacy.context.validateCode('TOKEN-1').timerEnabled, true, 'без колонки сохраняется прежний таймер');
   assert.equal(employeeUsage(sheets), 'Не использован', 'вход не должен менять статус');
+
+  // «Не участвует»: в волну не пускаем, но строку из таблицы не выкидываем.
+  assert.deepEqual(JSON.parse(JSON.stringify(context.validateCode('TOKEN-5'))),
+    { valid: false, reason: 'excluded' }, 'выведенный из волны не входит по своему токену');
+  assert.deepEqual(JSON.parse(JSON.stringify(context.getSurvey({ id: 5, code: 'TOKEN-5' }))),
+    { ok: false, error: 'unauthorized' }, 'и не получает вопросы в обход входа');
+  assert.match(String(context.validateSurvey()), /Не участвуют в волне \(1\)/, 'проверка называет выведенных отдельно');
+  assert.doesNotMatch(String(context.auditQuestionSets()), /#5 /, 'выведенный не попадает в аудит наборов');
 
   // Строка, в которой остался один ID (протянутая вниз разметка), — не сотрудник.
   const report = context.validateSurvey();

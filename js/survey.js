@@ -45,7 +45,7 @@ window.Survey = (function () {
       user, questions, minAnswers: minAnswers || null,
       questionSetKey: makeQuestionSetKey(questions),
       index: 0, frontier: 0, answers: {}, done: false, knowledgeIntroSeen: false,
-      deadlines: {},
+      timers: {},
     };
     resetSaveQueue();
     persist();
@@ -105,29 +105,57 @@ window.Survey = (function () {
     // уже отвеченного вопроса ответ остаётся заблокированным, но таймер не нужен.
     const reviewingKnowledge = q.block === 'knowledge' && !!answered && !isFrontier;
     const useTimer = state.user.timerEnabled !== false && !!bc.timed && !reviewingKnowledge;
+    if (useTimer) resumeTimer(q, bc);
     renderBody(q, bc, answered, useTimer, reviewingKnowledge, useTimer ? secondsLeft(q, bc) : null);
   }
 
-  // Срок ответа привязан к вопросу, а не к отрисовке. Иначе отсчёт обнулялся при
-  // каждом возврате к вопросу: шаг назад и обратно — и снова полные 40 секунд.
-  // Срок ставится один раз, живёт в сохранённом прогрессе и переживает F5.
-  function deadlineFor(q, bc) {
-    const total = Number(state.user.timerSeconds) > 0 ? Number(state.user.timerSeconds) : bc.timerSeconds;
-    if (!state.deadlines) state.deadlines = {};
-    if (!state.deadlines[q.id]) {
-      state.deadlines[q.id] = Date.now() + total * 1000;
-      persist();
+  /* Время на вопрос живёт в состоянии, а не в отрисовке, и имеет два режима:
+   *   { deadline }  — идёт, отсчитывается от стенных часов; закрытая вкладка и F5
+   *                   время не останавливают, иначе перезагрузка стала бы паузой;
+   *   { left }      — заморожено, пока человек смотрит предыдущий вопрос.
+   * Заморозка честна: на экране просмотра видно только уже отвеченный вопрос,
+   * текущий там не показывается, так что выгадать время на подсказку нельзя.
+   * А вот терять секунды на шаг назад человек не должен. */
+  function timerSlot(q, bc) {
+    if (!state.timers) state.timers = {};
+    if (!state.timers[q.id]) {
+      const total = Number(state.user.timerSeconds) > 0 ? Number(state.user.timerSeconds) : bc.timerSeconds;
+      state.timers[q.id] = { left: total * 1000 };
     }
-    return state.deadlines[q.id];
+    return state.timers[q.id];
+  }
+  function msLeft(q, bc) {
+    const slot = timerSlot(q, bc);
+    return slot.deadline != null ? slot.deadline - Date.now() : slot.left;
   }
   function secondsLeft(q, bc) {
-    return Math.ceil((deadlineFor(q, bc) - Date.now()) / 1000);
+    return Math.ceil(msLeft(q, bc) / 1000);
   }
-  // Вопрос, у которого срок истёк, пока вкладка была закрыта или свёрнута.
+  // Пошли отсчёт: замороженный остаток превращается в срок по стенным часам.
+  function resumeTimer(q, bc) {
+    const slot = timerSlot(q, bc);
+    if (slot.deadline == null) {
+      slot.deadline = Date.now() + Math.max(0, slot.left);
+      delete slot.left;
+      persist();
+    }
+  }
+  // Остановили отсчёт: срок превращается обратно в остаток.
+  function freezeTimer() {
+    if (!state || !state.timers) return;
+    const q = state.questions[state.frontier];
+    if (!q) return;
+    const slot = state.timers[q.id];
+    if (!slot || slot.deadline == null) return;
+    slot.left = Math.max(0, slot.deadline - Date.now());
+    delete slot.deadline;
+    persist();
+  }
+  // Вопрос, у которого время вышло, пока вкладка была закрыта или свёрнута.
   function expiredOnArrival(q, bc, answered, isFrontier) {
     if (answered || !isFrontier) return false;
     if (state.user.timerEnabled === false || !bc.timed) return false;
-    return secondsLeft(q, bc) <= 0;
+    return msLeft(q, bc) <= 0;
   }
 
   function mascotUrl(index) {
@@ -315,6 +343,7 @@ window.Survey = (function () {
   function back() {
     if (state.index === 0) return;
     stopTimer();
+    freezeTimer();   // пока смотрим предыдущий вопрос, время текущего не идёт
     state.index -= 1;
     persist();
     render();
@@ -503,9 +532,9 @@ window.Survey = (function () {
       questionSetKey: makeQuestionSetKey(questions), index: s.index, frontier: s.frontier,
       answers: s.answers || {}, done: false,
       knowledgeIntroSeen: s.knowledgeIntroSeen === true,
-      // Сроки ответа переживают перезагрузку: иначе F5 обнулял бы отсчёт так же,
+      // Время вопросов переживает перезагрузку: иначе F5 обнулял бы отсчёт так же,
       // как это делал возврат на шаг назад.
-      deadlines: s.deadlines || {},
+      timers: s.timers || {},
     };
     resetSaveQueue();
     show('screen-survey');

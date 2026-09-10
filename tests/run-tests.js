@@ -614,7 +614,10 @@ function testKnowledgeReviewNavigation() {
   elements['q-body'].children[0].onclick();
   assert.equal(elements['q-text'].textContent, 'Знания 302');
   assert.equal(timerStarts, 3, 'на следующем текущем вопросе запускается новый таймер');
+  assert.equal(elements['q-timer'].textContent, 20, 'новый вопрос начинается с полного времени');
 
+  // Время идёт, пока человек СМОТРИТ на текущий вопрос.
+  clock += 12000;
   windowObject.Survey.back();
   assert.equal(elements['q-text'].textContent, 'Знания 301');
   assert.equal(timerStarts, 3, 'при возврате на отвеченный вопрос таймер не перезапускается');
@@ -623,13 +626,14 @@ function testKnowledgeReviewNavigation() {
   const returnButton = elements['q-body'].children[1];
   assert.equal(returnButton.textContent, 'Вернуться к текущему вопросу');
 
-  // Отсчёт на текущем вопросе идёт от его срока. Иначе шаг назад и обратно
-  // за секунду до конца давал бы полные 40 секунд, и так до бесконечности.
-  clock += 18000;
+  // А на экране просмотра — замирает: текущего вопроса там не видно, выгадать
+  // время на подсказку нельзя, а терять секунды на шаг назад человек не должен.
+  clock += 60000;
   returnButton.onclick();
   assert.equal(elements['q-text'].textContent, 'Знания 302');
   assert.equal(timerStarts, 4, 'после возврата на текущий вопрос отсчёт возобновляется');
-  assert.equal(elements['q-timer'].textContent, 2, 'возврат не обнуляет отсчёт: осталось 2 секунды из 20');
+  assert.equal(elements['q-timer'].textContent, 8,
+    'осталось ровно то, что было на момент ухода: 12 секунд потрачено, минута просмотра не считается');
   assert.equal(elements['q-timer'].classList.contains('hidden'), false);
   assert.equal(elements['q-body'].children.length, 1, 'на текущем вопросе кнопка возврата не показывается');
 

@@ -14,6 +14,30 @@
   --radius:     16px;
   --radius-sm:  8px;
   --shadow:     0 10px 34px rgba(0, 60, 33, .10);
+  --brand-text: #005C32;
+  --field-focus: #FFFFFF;
+  --ghost-hover: #e6eaf1;
+  color-scheme: light dark;
+}
+
+/* Тёмная тема: включается по настройке системы (prefers-color-scheme). */
+@media (prefers-color-scheme: dark) {
+  :root {
+    --brand:      #1B8452;
+    --brand-dark: #17703F;
+    --brand-tint: #1D2C24;
+    --brand-red:  #FF6B64;
+    --bg:         #0F1512;
+    --surface:    #18211C;
+    --ink:        #E8EEEA;
+    --muted:      #A3B0A8;
+    --error:      #FF7A73;
+    --line:       #2A3730;
+    --shadow:     0 10px 34px rgba(0, 0, 0, .45);
+    --brand-text: #4FC48A;
+    --field-focus: #0F1512;
+    --ghost-hover: #22302A;
+  }
 }
 
 * { box-sizing: border-box; }
@@ -47,7 +71,7 @@ body {
   font-size: 18px; letter-spacing: 2px; text-align: center; text-transform: uppercase;
   border: 1.5px solid var(--line); border-radius: var(--radius-sm); background: var(--surface);
 }
-#code-input:focus { outline: none; border-color: var(--brand); background: #fff; }
+#code-input:focus { outline: none; border-color: var(--brand); background: var(--field-focus); }
 
 /* Кнопки */
 .btn {
@@ -59,7 +83,7 @@ body {
 .btn:active { transform: translateY(1px); }
 .btn:disabled { opacity: .5; cursor: default; }
 .btn.ghost { background: var(--surface); color: var(--ink); }
-.btn.ghost:hover { background: #e6eaf1; }
+.btn.ghost:hover { background: var(--ghost-hover); }
 
 /* Приветствие / благодарность */
 .welcome { width: 100%; max-width: 620px; text-align: center; }
@@ -132,7 +156,7 @@ body {
 .timer {
   display: inline-flex; align-items: center; justify-content: center;
   width: 52px; height: 52px; margin-bottom: 14px; font-size: 22px; font-weight: 700;
-  color: var(--brand); border: 3px solid var(--brand); border-radius: 50%;
+  color: var(--brand-text); border: 3px solid var(--brand); border-radius: 50%;
 }
 .q-text { font-size: 22px; font-weight: 700; line-height: 1.3; margin: 4px 0 22px; }
 .q-body { display: flex; flex-direction: column; gap: 11px; }
@@ -151,7 +175,7 @@ body {
   width: 100%; padding: 14px 16px; font-size: 16px; font-family: inherit;
   border: 1.5px solid var(--line); border-radius: var(--radius-sm); resize: vertical; background: var(--surface);
 }
-.answer-text:focus { outline: none; border-color: var(--brand); background: #fff; }
+.answer-text:focus { outline: none; border-color: var(--brand); background: var(--field-focus); }
 
 .own-wrap { display: flex; flex-direction: column; gap: 10px; }
 .own-toggle { color: var(--muted); }

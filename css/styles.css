@@ -20,9 +20,10 @@
   color-scheme: light dark;
 }
 
-/* Тёмная тема: включается по настройке системы (prefers-color-scheme). */
+/* Тёмная тема: по настройке системы, пока человек не выбрал вручную кнопкой справа сверху
+   (выбор хранится в localStorage, js/theme.js). Явный выбор — атрибут data-theme на <html>. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --brand:      #1B8452;
     --brand-dark: #17703F;
     --brand-tint: #1D2C24;
@@ -39,6 +40,36 @@
     --ghost-hover: #22302A;
   }
 }
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --brand:    #1B8452;
+  --brand-dark: #17703F;
+  --brand-tint: #1D2C24;
+  --brand-red:  #FF6B64;
+  --bg:     #0F1512;
+  --surface:  #18211C;
+  --ink:    #E8EEEA;
+  --muted:    #A3B0A8;
+  --error:    #FF7A73;
+  --line:     #2A3730;
+  --shadow:   0 10px 34px rgba(0, 0, 0, .45);
+  --brand-text: #4FC48A;
+  --field-focus: #0F1512;
+  --ghost-hover: #22302A;
+}
+:root[data-theme="light"] { color-scheme: light; }
+
+/* Переключатель темы */
+.theme-toggle {
+  position: fixed; top: 14px; right: 14px; z-index: 60;
+  width: 40px; height: 40px; padding: 0; border-radius: 50%;
+  display: inline-flex; align-items: center; justify-content: center;
+  background: var(--surface); color: var(--ink); border: 1px solid var(--line);
+  cursor: pointer; box-shadow: var(--shadow);
+}
+.theme-toggle:hover { border-color: var(--brand); }
+.theme-toggle:focus-visible { outline: 3px solid var(--brand); outline-offset: 2px; }
+.theme-toggle svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; height: 100%; }

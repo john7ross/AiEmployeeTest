@@ -60,6 +60,23 @@ window.CONFIG = {
       '103': { A: { safety: 90 }, B: { safety: 90 }, C: { safety: 40 } },
       '105': { A: { safety: 95 }, B: { safety: 90 }, C: { safety: 50 } },
       '411': { A: { safety: 0 },  B: { safety: 80 }, C: { safety: 100 } },
+
+      // --- Волна 3: новые вопросы. Якоря волны 1 (104, 109, 205, 207, 411) выше без изменений. ---
+      // Принятие: 104, 109 + 121, 122, 124, 132 (6 вопросов)
+      '121': { A: { adoption: 90 }, B: { adoption: 40 }, C: { adoption: 55 } },
+      '122': { A: { adoption: 25 }, B: { adoption: 60 }, C: { adoption: 90 } },
+      '124': { A: { adoption: 90 }, B: { adoption: 45 }, C: { adoption: 60 } },
+      '132': { A: { adoption: 80 }, B: { adoption: 90 }, C: { adoption: 20 } },
+      // Интерес: 205, 207 + 221, 222, 223 (5 вопросов)
+      '221': { A: { interest: 95 }, B: { interest: 55 }, C: { interest: 25 } },
+      '222': { A: { interest: 55 }, B: { interest: 15 }, C: { interest: 90 } },
+      '223': { A: { interest: 65 }, B: { interest: 95 }, C: { interest: 15 } },
+      // Безопасность: 411 + 421, 422, 423, 424 (5 вопросов)
+      '421': { A: { safety: 80 }, B: { safety: 30 }, C: { safety: 95 } },
+      '422': { A: { safety: 95 }, B: { safety: 80 }, C: { safety: 10 } },
+      '423': { A: { safety: 35 }, B: { safety: 70 }, C: { safety: 95 } },
+      '424': { A: { safety: 55 }, B: { safety: 95 }, C: { safety: 15 } },
+      // Без баллов (не входят в характеристики): 131 экономия времени, 133 барьер, 134 использование ai-tools.
     },
     // Итог: 50% принятие + 30% интерес + 20% безопасность.
     thresholds: [

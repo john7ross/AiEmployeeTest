@@ -758,7 +758,8 @@ function testProductionConfig() {
 
   assert.deepEqual(
     Object.fromEntries(Object.entries(dimensionQuestionIds).map(([key, ids]) => [key, ids.size])),
-    { adoption: 8, interest: 8, safety: 5 },
+    // Волны 1 и 3 вместе: 8/8/5 (волна 1) + 4/3/4 новых вопроса волны 3.
+    { adoption: 12, interest: 11, safety: 9 },
   );
   assert.equal(
     Object.values(profile.dimensions).reduce((sum, dimension) => sum + dimension.weight, 0),

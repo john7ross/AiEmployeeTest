@@ -289,11 +289,25 @@ function getSetting(key) {
 /* =========================================================================
  * «НЕ УЧАСТВУЕТ» — сотрудник остаётся в таблице, но выпадает из волны
  *
- * Третье значение колонки «Использование». Ставится тем, кто ушёл из отдела
+ * Четвёртое значение колонки «Использование». Ставится тем, кто ушёл из отдела
  * или по любой причине не проходит опросы. Такой человек:
  *   - не может войти по своему токену;
- *   - не сбрасывается и не архивируется при startNewWave();
+ *   - не возвращается в волну при startNewWave(): статус за ним сохраняется;
  *   - не попадает ни в участников, ни в список «не прошли» у аналитики.
+ *
+ * НО если его исключили ПОСЛЕ прохождения, итоги уходят в архив, а сводка
+ * в Employees очищается — иначе волна теряет его результат, а прошлые цифры
+ * висят в таблице как результат новой волны. Срабатывает это при ДВУХ
+ * условиях разом: у него непустая сводка в Employees И есть ответы ТЕКУЩЕЙ
+ * волны в Results. Исключённый, который эту волну не проходил, не трогается
+ * вообще — ни архива, ни очистки, ни строки в отчёте previewNewWave().
+ *
+ * Волну, которая уже закрыта, этим не исправить: ответов текущей волны у
+ * человека нет, и сводка так и останется в Employees. Такую потерю чинят
+ * руками в ДВА шага: дописать строку в Employees_history и очистить сводку
+ * в Employees (иначе старые цифры повиснут там навсегда — startNewWave() их
+ * уже не уберёт). Так в волне 2 потерялся #4, ушедший из отдела после
+ * прохождения.
  *
  * Строку при этом НЕ удаляют: на ID сотрудника завязаны его ответы в Results,
  * архив прошлых волн в Employees_history и отметки на листе Usages. Удалённая
@@ -693,7 +707,10 @@ function finish(p) {
  * previewNewWave()   — показывает, что изменит startNewWave, ничего не трогая.
  * startNewWave()     — архивирует итоги в лист Employees_history, очищает итоги
  *                      в Employees, ставит «Не использован» и увеличивает
- *                      Settings ▸ wave на единицу.
+ *                      Settings ▸ wave на единицу. У кого стоит «Не участвует»,
+ *                      статус сохраняется; итоги архивируются и сводка
+ *                      очищается только у того, кто ЭТУ волну прошёл, —
+ *                      остальные исключённые не трогаются.
  *
  * Лист Results startNewWave НЕ ТРОГАЕТ: ответы прошлых волн остаются на месте,
  * новые лягут ниже с новым номером волны.
@@ -762,25 +779,51 @@ function newWave_(dryRun) {
                       'иначе ответы новой волны перемешаются с прошлой.');
     }
 
+    /* Кто отвечал в ЭТОЙ волне — по листу Results. Нужно для исключённых: без
+     * такой проверки в архив уехала бы сводка прошлой волны, которая осталась
+     * в Employees непочищенной, и легла бы под чужим номером волны. */
+    var answeredInWave = {};
+    var rdata = m.sheet.getDataRange().getValues();
+    for (var q = 1; q < rdata.length; q++) {
+      if (rdata[q][0] === '' || rdata[q][0] == null) continue;
+      if (!rowInWave(rdata[q], m.iWave, wave)) continue;
+      answeredInWave[String(rdata[q][0])] = true;
+    }
+
     var archive = [], reset = [], lines = [];
     for (var r = 1; r < data.length; r++) {
       var id = data[r][iId];
       if (id === '' || id == null) continue;
       var status = String(data[r][iUse]).trim().toLowerCase();
       var finished = status === 'использован';
-      if (!finished && status !== 'частично') continue;
-      if (finished) {
+      /* «Не участвует» выводит человека из СЛЕДУЮЩИХ волн, но не отменяет уже
+       * сданную. Кто прошёл опрос и был исключён ПОСЛЕ прохождения, идёт в
+       * архив — иначе волна теряет его результат (так в волне 2 потерялся #4,
+       * ушедший из отдела после прохождения). Статус исключённого при этом НЕ
+       * сбрасывается: в новую волну он не возвращается, но сводка очищается,
+       * чтобы прошлые цифры не читались как результат новой волны. */
+      var hasSummary = cols.some(function (c) { return data[r][c] !== '' && data[r][c] != null; });
+      var excludedDone = isExcluded(status) && hasSummary && answeredInWave[String(id)] === true;
+      if (!finished && !excludedDone && status !== 'частично') continue;
+      if (finished || excludedDone) {
         archive.push([wave, id, data[r][iFio], iDept >= 0 ? data[r][iDept] : '', iRole >= 0 ? data[r][iRole] : '']
           .concat(cols.map(function (c) { return data[r][c]; }))
           .concat([new Date()]));
       }
-      reset.push(r + 1);
-      lines.push('  #' + id + ' ' + data[r][iFio] + (finished ? ' — итоги в архив, статус сброшен' : ' — был «Частично», статус сброшен'));
+      reset.push({ row: r + 1, clearStatus: !excludedDone });
+      lines.push('  #' + id + ' ' + data[r][iFio] +
+        (excludedDone ? ' — прошёл до исключения, итоги в архив, статус «' + EXCLUDED_STATUS + '» сохранён'
+                      : finished ? ' — итоги в архив, статус сброшен'
+                                 : ' — был «Частично», статус сброшен'));
     }
+    var statusResets = reset.filter(function (item) { return item.clearStatus; }).length;
 
     var head = ['Волна', 'ID', 'ФИО', 'Отдел', 'Должность'].concat(SUMMARY_COLUMNS).concat(['Архивировано']);
     var report = ['Волна ' + wave + ' -> ' + (wave + 1),
-                  'В архив: ' + archive.length + ' чел., статус сбросится у ' + reset.length + ' чел.'];
+                  'В архив: ' + archive.length + ' чел., статус сбросится у ' + statusResets + ' чел.' +
+                  (reset.length > statusResets
+                    ? ', сводка очистится ещё у ' + (reset.length - statusResets) + ' чел. со статусом «' + EXCLUDED_STATUS + '»'
+                    : '')];
     report = report.concat(lines);
     report.push('Лист Results не трогается: ответы волны ' + wave + ' остаются, новые лягут с номером ' + (wave + 1) + '.');
 
@@ -800,9 +843,9 @@ function newWave_(dryRun) {
     if (archive.length) {
       hist.getRange(hist.getLastRow() + 1, 1, archive.length, head.length).setValues(archive);
     }
-    reset.forEach(function (row) {
-      cols.forEach(function (c) { sh.getRange(row, c + 1).setValue(''); });
-      sh.getRange(row, iUse + 1).setValue('Не использован');
+    reset.forEach(function (item) {
+      cols.forEach(function (c) { sh.getRange(item.row, c + 1).setValue(''); });
+      if (item.clearStatus) sh.getRange(item.row, iUse + 1).setValue('Не использован');
     });
     setSetting('wave', wave + 1);
 

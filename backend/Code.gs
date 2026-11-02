@@ -1075,3 +1075,113 @@ function validateSurvey() {
   Logger.log(report);
   return report;
 }
+
+
+/* =========================================================================
+ * ДОСЧЁТ ОЦЕНОК ПО СВОБОДНЫМ ОТВЕТАМ
+ * -------------------------------------------------------------------------
+ * Приложение не оценивает «свой вариант», поэтому при нескольких свободных
+ * ответах характеристика может не набрать minAnswers и остаться пустой (а с
+ * ней — итог и портрет). Скилл ai-survey-pulse разбирает такие ответы
+ * (какому варианту каждый ближе, с причиной), человек подтверждает, а
+ * `python tools/own_answers.py --gs analysis.json` печатает готовый список
+ * MANUAL_SCORES — его вставляют ниже.
+ *
+ * Порядок: previewManualScores() — показывает, что изменится, ничего не пишет;
+ * applyManualScores() — пишет. Пустые ячейки заполняются; совпадающие
+ * остаются как есть; если в ячейке уже другое значение — запись пропускается
+ * и это попадает в отчёт (перезапись только с overwrite: true у записи).
+ * Итог и портрет считаются как в приложении: 0,5·принятие + 0,3·интерес +
+ * 0,2·безопасность, ярлык — по порогам; пишутся, только если все три
+ * характеристики есть. Строки «Использование» и «Дата» не затрагиваются.
+ * ========================================================================= */
+var MANUAL_SCORE_WEIGHTS = { adoption: 0.5, interest: 0.3, safety: 0.2 };
+var MANUAL_SCORE_THRESHOLDS = [
+  { max: 40, label: 'Оппонент' },
+  { max: 69, label: 'Конформист' },
+  { max: 100, label: 'Энтузиаст' }
+];
+var MANUAL_SCORE_COLUMNS = {
+  adoption: 'Принятие/готовность использовать ИИ',
+  interest: 'Интерес и инициативность',
+  safety:   'Безопасность и ответственность'
+};
+/* id — ID сотрудника; wave — волна, по которой досчитано (для памяти);
+ * adoption / interest / safety — только те, что нужно досчитать;
+ * why — кратко, по каким ответам. */
+var MANUAL_SCORES = [
+  { id: 2, wave: 3, adoption: 82, interest: 66,
+    why: 'Свободные ответы 121 и 124 приравнены к варианту A, 205 — к B; подтверждено 02.11.2026' }
+];
+
+function previewManualScores() { return applyManualScores_(true); }
+function applyManualScores()   { return applyManualScores_(false); }
+
+function applyManualScores_(dryRun) {
+  var lock = LockService.getScriptLock(); lock.waitLock(30000);
+  try {
+    var sh = sheet('Employees');
+    var data = sh.getDataRange().getValues();
+    var h = data[0];
+    var iId = colIndex(h, 'ID');
+    var iTotal = colIndex(h, 'Средний балл на основе ответов');
+    var iLabel = colIndex(h, 'Портрет');
+    if (iId < 0 || iTotal < 0 || iLabel < 0) throw new Error('Employees: нет колонок ID / «Средний балл…» / «Портрет»');
+    var out = [dryRun ? 'ПРОБНЫЙ ПРОГОН — ничего не записано' : 'ЗАПИСЬ ВЫПОЛНЕНА'];
+
+    MANUAL_SCORES.forEach(function (m) {
+      var row = -1;
+      for (var r = 1; r < data.length; r++) if (String(data[r][iId]) === String(m.id)) { row = r; break; }
+      if (row < 0) { out.push('#' + m.id + ': сотрудника нет в Employees — пропущено'); return; }
+      var name = data[row][colIndex(h, 'ФИО')];
+      var scores = {};
+      Object.keys(MANUAL_SCORE_COLUMNS).forEach(function (dim) {
+        var c = colIndex(h, MANUAL_SCORE_COLUMNS[dim]);
+        if (c < 0) throw new Error('Employees: нет колонки «' + MANUAL_SCORE_COLUMNS[dim] + '»');
+        var cur = data[row][c];
+        var has = cur !== '' && cur != null;
+        scores[dim] = has ? Number(cur) : null;
+        if (m[dim] === undefined) return;
+        if (!has) {
+          out.push('#' + m.id + ' ' + name + ': ' + dim + ' пусто -> ' + m[dim]);
+          if (!dryRun) sh.getRange(row + 1, c + 1).setValue(m[dim]);
+          scores[dim] = m[dim];
+        } else if (Number(cur) === Number(m[dim])) {
+          out.push('#' + m.id + ' ' + name + ': ' + dim + ' уже ' + cur + ' (совпадает)');
+        } else if (m.overwrite) {
+          out.push('#' + m.id + ' ' + name + ': ' + dim + ' ' + cur + ' -> ' + m[dim] + ' (overwrite)');
+          if (!dryRun) sh.getRange(row + 1, c + 1).setValue(m[dim]);
+          scores[dim] = m[dim];
+        } else {
+          out.push('#' + m.id + ' ' + name + ': ' + dim + ' уже ' + cur + ', в списке ' + m[dim] + ' — НЕ ЗАПИСАНО (нужен overwrite: true)');
+        }
+      });
+
+      var all = Object.keys(MANUAL_SCORE_COLUMNS).every(function (d) { return scores[d] != null && !isNaN(scores[d]); });
+      if (!all) { out.push('#' + m.id + ' ' + name + ': есть не все три характеристики — итог и портрет не трогаю'); return; }
+      var total = 0, wsum = 0;
+      Object.keys(MANUAL_SCORE_WEIGHTS).forEach(function (d) { total += scores[d] * MANUAL_SCORE_WEIGHTS[d]; wsum += MANUAL_SCORE_WEIGHTS[d]; });
+      total = Math.round(total / wsum);
+      var label = '';
+      for (var k = 0; k < MANUAL_SCORE_THRESHOLDS.length; k++) {
+        if (total <= MANUAL_SCORE_THRESHOLDS[k].max) { label = MANUAL_SCORE_THRESHOLDS[k].label; break; }
+      }
+      var curTotal = data[row][iTotal], curLabel = data[row][iLabel];
+      [[iTotal, curTotal, total, 'итог'], [iLabel, curLabel, label, 'портрет']].forEach(function (x) {
+        var has = x[1] !== '' && x[1] != null;
+        if (!has || m.overwrite) {
+          out.push('#' + m.id + ' ' + name + ': ' + x[3] + (has ? ' ' + x[1] : ' пусто') + ' -> ' + x[2]);
+          if (!dryRun) sh.getRange(row + 1, x[0] + 1).setValue(x[2]);
+        } else if (String(x[1]) === String(x[2])) {
+          out.push('#' + m.id + ' ' + name + ': ' + x[3] + ' уже ' + x[1] + ' (совпадает)');
+        } else {
+          out.push('#' + m.id + ' ' + name + ': ' + x[3] + ' уже ' + x[1] + ', по расчёту ' + x[2] + ' — НЕ ЗАПИСАНО (нужен overwrite: true)');
+        }
+      });
+      if (m.why) out.push('   основание: ' + m.why);
+    });
+    var report = out.join('\n');
+    Logger.log(report);
+    return report;
+  } finally { lock.releaseLock(); }
+}

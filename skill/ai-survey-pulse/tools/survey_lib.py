@@ -228,6 +228,10 @@ def parse(xlsx_path):
                      "C": r[8] if len(r) > 8 else None, "D": r[9] if len(r) > 9 else None},
         }
 
+    ANSWER_TEXTS.clear()
+    for qid_, rec_ in answers.items():
+        ANSWER_TEXTS[qid_] = {k: str(rec_[k]).strip() for k in "ABCD" if rec_.get(k) not in (None, "")}
+
     # Questions -> текст, признак включённости, ограничение по ID
     questions, order = {}, []
     qsheet = wb[S["questions"]] if S.get("questions") in wb.sheetnames else None
@@ -343,6 +347,8 @@ def select_wave(data, wave):
     data = dict(data)
     data["wave"] = wave
     data["responses"] = data.get("responses_by_wave", {}).get(wave, {})
+    # Лист Questions настроен под текущую волну — набор прошлой берём из её ответов.
+    data["asked_from_responses"] = True
     hist = data.get("history", {}).get(wave)
     data["scores_from_history"] = bool(hist)
     if hist:
@@ -467,7 +473,12 @@ def parse_metrics(xlsx_path, dept_sheet=None):
     name = dept_sheet or CFG.get("metrics_dept_sheet", "БА")
     wb = openpyxl.load_workbook(xlsx_path, data_only=True)
     if name not in wb.sheetnames:
-        return {"sheet": None, "available": wb.sheetnames, "blocks": {}, "antimetrics": [], "events": []}
+        # Листы подписывают эмодзи («БА🟧»): сравниваем только буквы и цифры.
+        bare = lambda s: re.sub(r"[^\w]", "", str(s)).lower()
+        found = [s for s in wb.sheetnames if bare(s) == bare(name)]
+        if len(found) != 1:
+            return {"sheet": None, "available": wb.sheetnames, "blocks": {}, "antimetrics": [], "events": []}
+        name = found[0]
     rows = _rows(wb[name])
 
     blocks, antimetrics, events, dept_size = {}, [], [], None
@@ -490,6 +501,9 @@ def parse_metrics(xlsx_path, dept_sheet=None):
                                "target_col": i_target, "rows": []}
         elif head == "Антиметрики":
             current = "Антиметрики"
+        elif current == "Антиметрики" and (head.startswith("*") or head.startswith("Как считаем")):
+            # Под антиметриками лежат сноска и расшифровка метрик — это не антиметрики.
+            current = None
         elif head and current and current.startswith("Метрики."):
             b = blocks[current]
             vals = {}
@@ -503,18 +517,27 @@ def parse_metrics(xlsx_path, dept_sheet=None):
                 "target": r[b["target_col"]] if b["target_col"] is not None and b["target_col"] < len(r) else None,
             })
         elif head and current == "Антиметрики":
+            # В колонке C — описание и действие одним текстом («… Что делаем: …»),
+            # дальше идут значения по датам, а не действие.
+            desc = str(r[2]).strip() if len(r) > 2 and r[2] not in (None, "") else ""
+            trigger, _, action = desc.partition("Что делаем:")
             antimetrics.append({"name": " ".join(head.split()),
-                                "source": str(r[1]).strip() if len(r) > 1 else "",
-                                "trigger": str(r[2]).strip() if len(r) > 2 else "",
-                                "action": str(r[3]).strip() if len(r) > 3 else ""})
+                                "source": str(r[1]).strip() if len(r) > 1 and r[1] not in (None, "") else "",
+                                "trigger": " ".join(trigger.split()),
+                                "action": " ".join(action.split())})
 
         # Мероприятия и размер отдела живут в правых колонках того же листа.
         for i in range(len(r)):
             cell = str(r[i]).strip() if r[i] not in (None, "") else ""
             if cell == "Мероприятия" and i + 3 < len(r):
                 events.append({"_header_col": i})
-            elif cell == "Количество сотрудников в отделе" and i + 1 < len(r):
-                dept_size = r[i + 1]
+            elif cell.startswith("Количество сотрудников в отделе"):
+                # Бывает и «…: 14» в одной ячейке, и число в соседней.
+                m = re.search(r"(\d+)\s*$", cell)
+                if m:
+                    dept_size = int(m.group(1))
+                elif i + 1 < len(r) and r[i + 1] not in (None, ""):
+                    dept_size = r[i + 1]
 
     col = events[0]["_header_col"] if events else None
     events = []
@@ -543,7 +566,7 @@ def emp_id(rec):
         return None
 
 
-# Четвёртое значение колонки «Использование»: человек остаётся в таблице со всей
+# Третье значение колонки «Использование»: человек остаётся в таблице со всей
 # своей историей, но в текущей волне не участвует (ушёл из отдела и т.п.).
 # В разборе ПРОШЛОЙ волны он при этом считается: там решает архив, а не текущий
 # статус, — см. select_wave().
@@ -585,14 +608,36 @@ def not_completed(data):
 # --------------------------------------------------------------------------
 # Наборы вопросов
 # --------------------------------------------------------------------------
+def _wave_order(data):
+    """Порядок вопросов листа плюс те, что есть в ответах, но с листа уже убраны."""
+    order = list(data["question_order"])
+    seen = set(order)
+    for resp in data["responses"].values():
+        for q in resp:
+            if q not in seen:
+                order.append(q); seen.add(q)
+    return order
+
+
 def questions_for(data, eid):
-    """Список ID вопросов, которые ДОЛЖЕН был увидеть сотрудник eid (в порядке листа)."""
+    """Список ID вопросов, которые ДОЛЖЕН был увидеть сотрудник eid (в порядке листа).
+
+    Для прошлой волны галки «Включен» и ограничения на листе Questions уже
+    переставлены под текущую волну, поэтому набор берётся из её же ответов:
+    строка в Results есть — вопрос задавали.
+    """
+    if data.get("asked_from_responses"):
+        resp = data["responses"].get(str(eid), {})
+        return [q for q in _wave_order(data) if q in resp]
     return [q for q in data["question_order"]
             if data["questions"][q]["enabled"] and restriction_allows(data["questions"][q]["rule"], eid)]
 
 
 def base_question_ids(data):
     """Все включённые вопросы без учёта ограничений — общий каркас волны."""
+    if data.get("asked_from_responses"):
+        asked = {q for resp in data["responses"].values() for q in resp}
+        return [q for q in _wave_order(data) if q in asked]
     return [q for q in data["question_order"] if data["questions"][q]["enabled"]]
 
 
@@ -645,6 +690,13 @@ def knowledge_score(resp, asked_ids, key):
             "wrong": wrong, "blank": blank, "timeout": timeout}
 
 
+# Тексты вариантов с листа Answers: parse() заполняет, decode_answer() читает.
+# Раньше расшифровка жила только в config.json -> decode, и каждый новый вопрос
+# печатался в разборе как «(свой ответ) B». Теперь config.json — сокращения для
+# старых вопросов, а всё остальное берётся из самой таблицы.
+ANSWER_TEXTS = {}
+
+
 def decode_answer(qid, resp):
     """Human-readable meaning of a preference/attitude answer, or the free text."""
     val = resp.get(qid, "")
@@ -653,9 +705,18 @@ def decode_answer(qid, resp):
     d = CFG["decode"].get(qid)
     if val in ("A", "B", "C", "D") and d and val in d:
         return d[val]
+    if val in ("A", "B", "C", "D") and ANSWER_TEXTS.get(qid, {}).get(val):
+        txt = ANSWER_TEXTS[qid][val]
+        return "(свой вариант, без текста)" if "вой вариант" in txt else txt
     if qid == "511" and val in CFG["self_level"]:
         return CFG["self_level"][val]
     return "(свой ответ) " + val if val else "—"
+
+
+def is_regular_user(text):
+    """511: «Использую регулярно…» (текст из листа Answers) или «использует регулярно» (старая расшифровка)."""
+    t = str(text or "").strip().lower()
+    return t.startswith("использует регулярно") or t.startswith("использую регулярно")
 
 
 def answer_state(qid, resp, asked_ids):

@@ -22,6 +22,7 @@ Writes DIR/analysis.json (machine) and DIR/analysis.txt (human, UTF-8, feed to t
 import os, json, argparse, glob, re
 from collections import Counter, OrderedDict
 import survey_lib as L
+import own_answers as OA
 
 # 411 (персональные данные клиентов) обязан быть здесь: из него считается
 # «осознанность при работе с чувствительными данными», и он печатается в разборе.
@@ -31,11 +32,18 @@ ATT_QS  = ["101","102","103","104","105","106","107","108","109","110"]
 # Вопросы, из которых считается портрет (js/config.js -> portrait.scores).
 # Минимум ответов на характеристику берётся из листа Settings (ключ min_answers) —
 # единый источник для фронтенда, бэкенда и статистики; config.json — запасной.
+# Списки объединяют вопросы всех волн: у человека считаются только те, что ему задавались.
 DIM_QS = {
-    "adoption": ["101","102","104","106","107","108","109","110"],
-    "interest": ["201","202","203","205","207","208","209","210"],
-    "safety":   ["103","105","108","110","411"],
+    "adoption": ["101","102","104","106","107","108","109","110", "121","122","124","132"],
+    "interest": ["201","202","203","205","207","208","209","210", "221","222","223"],
+    "safety":   ["103","105","108","110","411", "421","422","423","424"],
 }
+
+# Вопросы волны 3: печатаются в разборе по человеку, только если ему задавались.
+NEW_QS = ["131","132","133","134","121","122","124","221","222","223","421","422","423","424"]
+# Часов в неделю для среднего по вопросу об экономии времени (131): середины интервалов,
+# для «больше 3 часов» берём 4 — это ориентир, а не замер.
+TIME_SAVING_HOURS = {"A": 0.0, "B": 0.5, "C": 2.0, "D": 4.0}
 
 # Признаки вовлечённости с листа Usages (метрика «вовлечён» = хотя бы один «Да»).
 USAGE_SIGNALS = ["Агент", "Подключил ai-tools", "Выложил артефакт", "Мероприятия", "Использует инструмент"]
@@ -79,10 +87,17 @@ def build(data):
             "short_dims": short_dimensions(asked_set, mins),
             "prefs": {q: (L.decode_answer(q, resp) if q in asked_set else "не задавался") for q in PREF_QS},
             "attitude": {q: (L.decode_answer(q, resp) if q in asked_set else "не задавался") for q in ATT_QS},
+            "extra": {q: L.decode_answer(q, resp) for q in NEW_QS if q in asked_set},
+            "raw": {q: resp.get(q, "") for q in NEW_QS if q in asked_set},
             "learning_format": resp.get("204", "") if "204" in asked_set else None,
             "ambassador": resp.get("205", "") if "205" in asked_set else None,
             "usage": usage_signals(usages.get(eid)),
         }
+        # Почему у человека пуста характеристика: свободные ответы веса не получают.
+        p["scores_diag"] = OA.diagnose(resp, asked_set, mins)
+        # Разбор свободных ответов (файл ведёт человек; без файла ничего не меняется).
+        OA.apply(p, resp, asked_set, mins, data.get("wave"),
+                 OA.load_map(L.CFG.get("own_answers_map"), data.get("wave")))
         people.append(p)
     return people
 
@@ -143,6 +158,32 @@ def aggregate(data, people):
     with_usage = [p for p in people if p["usage"]]
     usage_counts = {s: len([p for p in with_usage if p["usage"][s].lower() == "да"]) for s in USAGE_SIGNALS}
 
+    # Те же признаки по всему отделу: показатели в таблице метрик — про отдел,
+    # а не про тех, кто успел пройти волну. «Участвует? = Нет» — ушёл из отдела.
+    members = []
+    for eid, raw in data.get("usages", {}).items():
+        sig = usage_signals(raw)
+        if sig and sig["участвует"].lower() != "нет":
+            members.append({"id": eid, "name": str(raw.get("ФИО", "")).strip(), "usage": sig})
+    dept_rows = [m["usage"] for m in members]
+    usage_dept = {"participants": len(dept_rows),
+                  "members": members,
+                  "counts": {s: len([r for r in dept_rows if r[s].lower() == "да"]) for s in USAGE_SIGNALS},
+                  "undefined": {s: len([r for r in dept_rows if r[s].lower() == "не определено"]) for s in USAGE_SIGNALS},
+                  "engaged": len([r for r in dept_rows if r["вовлечён"]])}
+
+    # Осознанность при работе с данными (утверждено 15.09.2026): человек засчитывается,
+    # если ВСЕ вопросы блока безопасности у него верны (config → data_awareness_questions).
+    aw_qs = [str(q) for q in L.CFG.get("data_awareness_questions", [])]
+    aw_pct, aw_full = [], []
+    for p in people:
+        asked_aw = [q for q in aw_qs if q in p["asked"]]
+        if asked_aw:
+            ok = len([q for q in asked_aw if q not in p["knowledge_wrong"]])
+            aw_pct.append(100.0 * ok / len(asked_aw))
+            if ok == len(asked_aw):
+                aw_full.append(p["name"])
+
     return {
         "n": n,
         "portrait": dict(port),
@@ -159,9 +200,9 @@ def aggregate(data, people):
         "ambassadors_ready": [p["name"] for p in amb if p["ambassador"] == "A"],
         "ambassadors_asked": len(amb),
         # Считается СРЕДИ ПРОШЕДШИХ опрос (не от штата отдела) — так решено в проекте.
-        "using_regularly": [p["name"] for p in asked_511 if p["prefs"]["511"].startswith("использует регулярно")],
+        "using_regularly": [p["name"] for p in asked_511 if L.is_regular_user(p["prefs"]["511"])],
         "using_regularly_asked": len(asked_511),
-        "using_regularly_share": (round(100.0 * len([p for p in asked_511 if p["prefs"]["511"].startswith("использует регулярно")]) / len(asked_511))
+        "using_regularly_share": (round(100.0 * len([p for p in asked_511 if L.is_regular_user(p["prefs"]["511"])]) / len(asked_511))
                                   if asked_511 else None),
         # Калибровка (антиметрика «ложная уверенность»): + переоценка, − недооценка.
         "calibration_mean": round(sum(calib) / len(calib), 1) if calib else None,
@@ -189,14 +230,58 @@ def aggregate(data, people):
         "usage_covered": len(with_usage),
         "usage_counts": usage_counts,
         "engaged": [p["name"] for p in with_usage if p["usage"]["вовлечён"]],
+        "usage_dept": usage_dept,
+        "data_awareness_knowledge_pct": round(sum(aw_pct) / len(aw_pct), 1) if aw_pct else None,
+        "data_awareness_counted": len(aw_pct),
+        "data_awareness_full": aw_full,
         "min_answers": mins,
         "question_base": L.base_question_ids(data),
         "restricted_questions": L.restricted_questions(data),
         "question_sets": question_sets(people),
         "coverage": coverage(data, people),
+        "answers_dist": answers_dist(data, people),
+        "time_saving": time_saving(people),
         "short_dim_people": [{"name": p["name"], "dims": p["short_dims"]} for p in people if p["short_dims"]],
         "no_portrait": [p["name"] for p in people if not p["portrait"]],
     }
+
+
+def answers_dist(data, people):
+    """Распределение ответов по каждому НЕзнаниевому вопросу волны: сколько человек
+    выбрали какую букву, сколько написали свой ответ, сколько не успели.
+    Доли считаются от тех, кому вопрос задавался."""
+    out = {}
+    for q in L.base_question_ids(data):
+        if (data["questions"].get(q) or {}).get("correct"):
+            continue  # знания считаются отдельно
+        asked = [p for p in people if q in p["asked"]]
+        if not asked:
+            continue
+        cnt = Counter()
+        for p in asked:
+            v = data["responses"].get(str(p["id"]), {}).get(q, "")
+            if L.is_timeout(v):
+                cnt["TIMEOUT"] += 1
+            elif v in ("A", "B", "C", "D"):
+                cnt[v] += 1
+            elif v == "":
+                cnt["без ответа"] += 1
+            else:
+                cnt["свой текст"] += 1
+        out[q] = {"text": data["questions"][q]["text"], "asked": len(asked), "counts": dict(cnt),
+                  "options": L.ANSWER_TEXTS.get(q, {})}
+    return out
+
+
+def time_saving(people):
+    """Вопрос 131: средняя субъективная экономия, часов в неделю (по серединам интервалов)."""
+    vals = [TIME_SAVING_HOURS[p["raw"]["131"]] for p in people
+            if p.get("raw", {}).get("131") in TIME_SAVING_HOURS]
+    if not vals:
+        return None
+    return {"mean_hours": round(sum(vals) / len(vals), 2), "n": len(vals),
+            "share_saving": round(100.0 * len([v for v in vals if v > 0]) / len(vals)),
+            "note": "середины интервалов: 0 / 0,5 / 2 / 4 ч; «больше 3» взято как 4 — ориентир, не замер"}
 
 
 def question_sets(people):
@@ -244,6 +329,36 @@ def diff(cur, prev):
     return out
 
 
+def team_aggregate_of_snapshot(snapshot, lead_ids):
+    """Агрегат прошлой волны БЕЗ руководителя.
+
+    Срезы, сохранённые до правила «руководитель в метрики не входит», посчитаны с ним.
+    Сравнивать новую волну с такими числами нельзя, поэтому средние, знания, калибровку
+    и портреты пересчитываем по людям из того же среза. Остальные поля берём как есть."""
+    agg = dict(snapshot["aggregate"])
+    if not lead_ids:
+        return agg
+    people = snapshot.get("people", [])
+    team = [p for p in people if p.get("id") not in lead_ids]
+    if not people or len(team) == len(people):
+        return agg
+
+    def avg(vals):
+        vals = [v for v in vals if v is not None]
+        return round(sum(vals) / len(vals), 1) if vals else None
+
+    sc = lambda key: [p["scores"].get(key) for p in team]
+    agg["n"] = len(team)
+    agg["means"] = {"avg": avg(sc("avg")), "adoption": avg(sc("adoption")),
+                    "interest": avg(sc("interest")), "safety": avg(sc("safety"))}
+    kn = [p for p in team if p["scores"].get("knowledge_total")]
+    agg["knowledge_mean"] = avg([p["scores"].get("knowledge_correct") for p in kn])
+    agg["knowledge_pct_mean"] = avg([p["scores"].get("knowledge_pct") for p in kn])
+    agg["calibration_mean"] = avg(sc("calibration"))
+    agg["portrait"] = dict(Counter((p.get("portrait") or "без портрета") for p in team))
+    return agg
+
+
 def wave_date(data):
     """Latest completion date among finished employees -> 'YYYY-MM-DD' (identifies the wave)."""
     ids = set(L.completed_ids(data)); best = ""
@@ -279,6 +394,10 @@ def pick_prev(history_dir, cur_date, cur_wave):
         key = (wave if isinstance(wave, int) else 0, date)
         cur_key = (cur_wave, cur_date)
         if key >= cur_key:
+            continue
+        # Ранний срез той же волны (прошли не все) — не «прошлая волна»:
+        # сравнение с ним даёт ложную динамику и ложные антиметрики.
+        if isinstance(wave, int) and wave == cur_wave:
             continue
         if best_key is None or key > best_key:
             best_key, best = key, f
@@ -343,6 +462,10 @@ def to_text(agg, people, notdone, wave_diff, meta=None):
              + ("   ВНИМАНИЕ: есть готовые загрузить как есть — нужен инструктаж"
                 if agg["data_care"]["загрузил бы как есть (A)"] else ""))
     o.append(f"Не прошли (кроме теста): {[x['name'] for x in notdone]}")
+    if agg.get("time_saving"):
+        ts = agg["time_saving"]
+        o.append(f"Экономия времени (131): в среднем {ts['mean_hours']} ч/нед по {ts['n']} чел.; экономят хоть что-то: "
+                 f"{ts['share_saving']}%  ({ts['note']})")
 
     # --- калибровка: самооценка против факта ---
     o.append(f"\nКАЛИБРОВКА (самооценка − факт по знаниям), порог ±{agg['calibration_gap']} п.п.:")
@@ -425,6 +548,20 @@ def to_text(agg, people, notdone, wave_diff, meta=None):
         o.append(f"\n#{p['id']} {p['name']} — {p['role']}")
         o.append(f"  Портрет:{p['portrait']} | Принятие:{s['adoption']} Интерес:{s['interest']} Безоп:{s['safety']} "
                  f"| Знания:{s['knowledge_correct']}/{s['knowledge_total']} ({s['knowledge_pct']}%)")
+        ov = p.get("scores_override")
+        if ov:
+            names = ", ".join(f"{OA.DIM_RU[d]} {v['score']} (по {v['n']} ответам, из них по разбору: {', '.join(v['mapped']) or '—'})"
+                              for d, v in ov["dims"].items())
+            o.append(f"  ОЦЕНКА ПО РАЗБОРУ СВОБОДНЫХ ОТВЕТОВ: {names}. "
+                     f"{'Соответствия подтверждены человеком.' if ov['confirmed'] else 'Соответствия предварительные, нужно подтвердить.'} "
+                     f"В таблицу опроса это не записано.")
+        else:
+            lacking = [d for d in OA.DIMS if p["scores"].get(d) is None and (p.get("scores_diag") or {}).get(d, {}).get("need")]
+            if lacking:
+                d = p["scores_diag"]
+                o.append("  НЕТ ОЦЕНКИ: " + "; ".join(
+                    f"{OA.DIM_RU[x]} — ответов с весом {d[x]['scored']} из {d[x]['need']} нужных, свои ответы: {', '.join(d[x]['free']) or 'нет'}"
+                    for x in lacking) + ". Свой вариант веса не получает; можно разобрать его вручную (own_answers_map.json).")
         if s.get("knowledge_delta") is not None:
             move = ("вырос" if s["knowledge_delta"] > 0 else
                     "просел" if s["knowledge_delta"] < 0 else "остался на месте")
@@ -451,6 +588,8 @@ def to_text(agg, people, notdone, wave_diff, meta=None):
         o.append(f"  Амбассадор(205): {p['prefs']['205']} | Час(201): {p['prefs']['201']} | Нов.инстр(202): {p['prefs']['202']} | Самообуч(207): {p['prefs']['207']} | Мероприятия(210): {p['prefs']['210']}")
         o.append(f"  Отношение: 101:{p['attitude']['101']} | 104:{p['attitude']['104']} | 106:{p['attitude']['106']} | 107:{p['attitude']['107']} | 109:{p['attitude']['109']}")
         o.append(f"  Безопасность: 103:{p['attitude']['103']} | 108:{p['attitude']['108']} | 110:{p['attitude']['110']} | 411:{p['prefs'].get('411','—')}")
+        if p.get("extra"):
+            o.append("  Новые вопросы: " + " | ".join(f"{q}:{v}" for q, v in p["extra"].items()))
     return "\n".join(o)
 
 
@@ -494,11 +633,20 @@ def main():
         print(f"разбираю волну {a.wave}; баллы и портреты — {src}")
 
     people = build(data)
+    # Руководитель проходит опрос по желанию: его ответы сохраняются (в analysis.json,
+    # в истории, в разборе по людям), но в средние и доли отдела не входят.
+    lead_ids = set(L.CFG.get("lead_ids", []))
+    for p in people:
+        p["lead"] = p["id"] in lead_ids
+    team_people = [p for p in people if not p["lead"]]
+    if len(team_people) != len(people):
+        print(f"руководитель ({len(people) - len(team_people)}) сохранён, но в метрики отдела не входит; "
+              f"в метриках {len(team_people)} чел.")
     if not people:
         print("Опрос никто не завершил: в Employees нет строк со статусом «Использован» "
               "(или все они помечены как тестовые в config.json → test_employee_ids).\n"
               "Если это структурный шаблон таблицы — так и должно быть, считать пока нечего.")
-    agg = aggregate(data, people)
+    agg = aggregate(data, team_people)
     notdone = L.not_completed(data)
     wdate = wave_date(data)
     hist_dir = a.history_dir or L.CFG.get("history_dir")
@@ -514,7 +662,7 @@ def main():
     if not prev_path and not a.no_history and hist_dir:
         prev_path = pick_prev(hist_dir, wdate, wnum)
     prev_snapshot = json.load(open(prev_path, encoding="utf-8-sig")) if prev_path else None
-    prev = prev_snapshot["aggregate"] if prev_snapshot else None
+    prev = team_aggregate_of_snapshot(prev_snapshot, lead_ids) if prev_snapshot else None
     wave = diff(agg, prev)
     # Персональный прирост знаний. Нужен там, где волна меряет только хард-скиллы:
     # характеристики и портрет в такой волне пустые, а расти или не расти — видно здесь.
@@ -533,7 +681,8 @@ def main():
     # Persist this wave into history so the NEXT survey auto-compares against it.
     if not a.no_history and hist_dir:
         os.makedirs(hist_dir, exist_ok=True)
-        hfile = os.path.join(hist_dir, f"wave_{wdate}_w{wnum}_{agg['n']}p.json")
+        # В имени — все сохранённые люди (с руководителем), в aggregate — только отдел.
+        hfile = os.path.join(hist_dir, f"wave_{wdate}_w{wnum}_{len(people)}p.json")
         json.dump(out, open(hfile, "w", encoding="utf-8"), ensure_ascii=False, indent=1, default=str)
         print("history ->", hfile, "| compared with:", out["prev_wave"] or "(первая волна, сравнивать не с чем)")
     if not data["has_wave_column"]:

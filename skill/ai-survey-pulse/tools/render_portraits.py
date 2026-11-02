@@ -48,7 +48,7 @@ TPL = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>{css}
 <div class="rule"></div>
 <div class="lead">{lead}</div>
 <div class="anchor">На что приятно опереться: <b>{anchor}</b>.</div>
-<div class="sections">
+<div class="sections">{journey_block}
   <div class="sec"><div class="chip">🎯</div><div class="body"><h3>Где ИИ будет вам особенно кстати</h3><p>{scenarios}</p></div></div>
   <div class="sec"><div class="chip">📚</div><div class="body"><h3>Как вам будет комфортнее осваивать</h3><p>{learning}</p></div></div>
   <div class="sec"><div class="chip">🌱</div><div class="body"><h3>Чтобы ИИ стал естественным, а не обязанностью</h3><p>{natural}</p></div></div>
@@ -58,6 +58,10 @@ TPL = """<!doctype html><html lang="ru"><head><meta charset="utf-8"><style>{css}
 <div class="principle">«{principle}»</div>
 <div class="brand">С благодарностью за ваше время и вдумчивые ответы</div></div>
 </div></body></html>"""
+
+# Необязательный блок накопительного портрета (волна 3 и далее): путь человека по волнам.
+JOURNEY = ('\n  <div class="sec"><div class="chip">🧭</div><div class="body"><h3>Ваш путь: от первых шагов до сегодняшнего дня</h3>'
+           '<p>{journey}</p></div></div>')
 
 THANKS = ("Спасибо, что уделили время опросу и отвечали вдумчиво и искренне. "
           "Этот портрет — не оценка, а дружеский взгляд со стороны и небольшая карта, "
@@ -81,12 +85,12 @@ def esc(s):
 
 # Портрет обязан помещаться на один лист А4: он уходит человеку в личку как
 # открытка, а не как документ. Второй лист = текст переписан слишком длинно.
-WORD_LIMIT = 260
+WORD_LIMIT = 260   # без блока journey; с ним ориентир ≈ 330
 
 
 def word_count(p):
     return sum(len(str(p.get(k, "")).split()) for k in
-               ("lead", "anchor", "scenarios", "learning", "natural", "focus"))
+               ("lead", "anchor", "journey", "scenarios", "learning", "natural", "focus"))
 
 
 REQUIRED = ("id", "name", "role", "dept", "lead", "anchor", "scenarios", "learning", "natural", "focus")
@@ -129,7 +133,8 @@ def main():
     os.makedirs(hdir, exist_ok=True); os.makedirs(pdir, exist_ok=True)
 
     check_input(items)
-    long_ones = [(p["name"], word_count(p)) for p in items if word_count(p) > WORD_LIMIT]
+    long_ones = [(p["name"], word_count(p)) for p in items
+                 if word_count(p) > (WORD_LIMIT + 70 if str(p.get("journey", "")).strip() else WORD_LIMIT)]
     for name, n in long_ones:
         print(f"ВНИМАНИЕ: {name} — {n} слов (ориентир ≤{WORD_LIMIT}), портрет рискует уехать на второй лист")
 
@@ -139,6 +144,7 @@ def main():
         doc = TPL.format(css=CSS, name=esc(p["name"]), role=esc(p["role"]), dept=esc(p["dept"]),
                          lead=esc(p["lead"]), anchor=esc(p["anchor"]), scenarios=esc(p["scenarios"]),
                          learning=esc(p["learning"]), natural=esc(p["natural"]), focus=esc(p["focus"]),
+                         journey_block=JOURNEY.format(journey=esc(p["journey"])) if str(p.get("journey", "")).strip() else "",
                          thanks=esc(THANKS), principle=esc(p.get("principle", DEFAULT_PRINCIPLE)))
         open(os.path.join(hdir, base + ".html"), "w", encoding="utf-8").write(doc)
     print(f"wrote {len(items)} html -> {hdir}")

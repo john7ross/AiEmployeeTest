@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ретроспектива внедрения ИИ</title>
+<style>
+:root{
+  --ground:#F5F8F6; --surface:#ffffff; --surface2:#eef3f0;
+  --ink:#182119; --muted:#5b6b61; --faint:#79877e;
+  --green:#005C32; --green2:#0a7a45; --mint:#E6EFEB; --line:#dde6e0;
+  --warm:#a8680f; --cool:#2f6f7a; --grey:#b9c4bd;
+  --r:14px; --maxw:1120px;
+}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){
+  --ground:#0d1310; --surface:#141d18; --surface2:#18231d;
+  --ink:#e7efe9; --muted:#9db0a4; --faint:#8da096;
+  --green:#4bbd82; --green2:#5fce93; --mint:#1d2c24; --line:#26332b;
+  --warm:#d6a24a; --cool:#79b9c4; --grey:#4a5a51; }}
+:root[data-theme="dark"]{
+  --ground:#0d1310; --surface:#141d18; --surface2:#18231d;
+  --ink:#e7efe9; --muted:#9db0a4; --faint:#8da096;
+  --green:#4bbd82; --green2:#5fce93; --mint:#1d2c24; --line:#26332b;
+  --warm:#d6a24a; --cool:#79b9c4; --grey:#4a5a51;}
+*{box-sizing:border-box}
+body{margin:0;background:var(--ground);color:var(--ink);
+  font-family:system-ui,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;line-height:1.55;-webkit-font-smoothing:antialiased;}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:40px 24px 72px;}
+.eyebrow{font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--green);font-weight:700;}
+h1{font-size:clamp(26px,4vw,40px);line-height:1.1;margin:10px 0 10px;letter-spacing:-.02em;text-wrap:balance;font-weight:800;}
+.sub{color:var(--muted);font-size:15.5px;max-width:70ch;margin:0;}
+.meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:18px;}
+.tag{background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:5px 13px;font-size:12.5px;color:var(--muted);}
+.tag b{color:var(--ink);font-weight:700;}
+h2{font-size:13px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:700;margin:56px 0 6px;padding-bottom:10px;border-bottom:1px solid var(--line);}
+.lead{color:var(--muted);font-size:14.5px;max-width:80ch;margin:10px 0 18px;}
+.lead b{color:var(--ink)}
+.grid{display:grid;gap:16px;}
+.g3{grid-template-columns:repeat(3,1fr);} .g2{grid-template-columns:repeat(2,1fr);} .g4{grid-template-columns:repeat(4,1fr);}
+@media(max-width:900px){.g4{grid-template-columns:repeat(2,1fr)}.g3{grid-template-columns:repeat(2,1fr)}}
+@media(max-width:620px){.g4,.g3,.g2{grid-template-columns:1fr}}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;}
+.kpi .t{font-size:12.5px;color:var(--muted);font-weight:600;}
+.kpi .n{font-size:30px;font-weight:800;letter-spacing:-.02em;font-variant-numeric:tabular-nums;line-height:1.1;margin-top:8px;display:flex;align-items:baseline;gap:8px;flex-wrap:wrap}
+.kpi .n .from{font-size:18px;color:var(--faint);font-weight:700}
+.kpi .n .arr{font-size:16px;color:var(--faint)}
+.kpi .s{font-size:12.5px;color:var(--muted);margin-top:6px}
+.kpi.flat .n .to{color:var(--warm)}
+.kpi.up .n .to{color:var(--green)}
+.pill{display:inline-block;font-size:11.5px;font-weight:600;padding:2px 9px;border-radius:999px;white-space:nowrap;}
+.pill.up{background:var(--mint);color:var(--green)} .pill.flat{background:color-mix(in srgb,var(--warm) 16%,transparent);color:var(--warm)}
+.pill.info{background:color-mix(in srgb,var(--cool) 16%,transparent);color:var(--cool)}
+.bar{height:9px;border-radius:6px;background:var(--surface2);overflow:hidden;margin-top:6px}
+.bar>span{display:block;height:100%;border-radius:6px;background:linear-gradient(90deg,var(--green2),var(--green))}
+.row{display:flex;justify-content:space-between;align-items:baseline;font-size:13.5px;margin-top:12px}
+.row b{font-size:19px;font-variant-numeric:tabular-nums}
+.cap{font-size:12.5px;color:var(--faint);margin-top:10px;line-height:1.55}
+.cap b{color:var(--muted)}
+.split{display:flex;height:30px;border-radius:8px;overflow:hidden;gap:2px;margin-top:10px}
+.split>div{display:flex;align-items:center;justify-content:center;color:#fff;font-size:12.5px;font-weight:700;min-width:0}
+.legend{display:flex;flex-direction:column;gap:3px;margin-top:9px;font-size:12.5px;color:var(--muted)}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px;vertical-align:-1px}
+.q h3{margin:0;font-size:13.5px;line-height:1.4;font-weight:700}
+.q .id{font-size:11px;color:var(--faint);font-weight:600;letter-spacing:.04em}
+.tl{position:relative;margin:8px 0 0;padding-left:26px}
+.tl:before{content:"";position:absolute;left:7px;top:6px;bottom:6px;width:2px;background:var(--line)}
+.ev{position:relative;padding:7px 0 7px 4px;display:flex;gap:14px;align-items:baseline}
+.ev:before{content:"";position:absolute;left:-24px;top:15px;width:10px;height:10px;border-radius:50%;background:var(--green2);border:2px solid var(--ground)}
+.ev.survey:before{background:var(--warm);width:12px;height:12px;left:-25px;top:14px}
+.ev.plan:before{background:var(--surface);border:2px solid var(--faint)}
+.ev .d{flex:0 0 52px;font-size:12.5px;font-variant-numeric:tabular-nums;color:var(--faint);font-weight:600}
+.ev .x{font-size:14px}
+.ev .x small{color:var(--faint);font-size:12px;margin-left:6px}
+.mc h3{margin:0;font-size:13.5px;line-height:1.35}
+.mc .tg{font-size:11.5px;color:var(--faint);margin-top:2px}
+.mc svg{display:block;width:100%;height:auto;margin-top:8px}
+.mc .dl{font-size:12.5px;margin-top:2px;font-variant-numeric:tabular-nums;color:var(--muted)}
+.mc .dl b{color:var(--ink)}
+.axis{font-size:10.5px;fill:var(--faint)}
+.val{font-size:11.5px;font-weight:700;fill:var(--ink);font-variant-numeric:tabular-nums}
+.sig{display:flex;gap:14px;align-items:flex-start}
+.sig .k{flex:0 0 6px;align-self:stretch;border-radius:4px;background:var(--warm)}
+.sig.ok .k{background:var(--green2)} .sig.cool .k{background:var(--cool)}
+.sig h3{margin:0 0 4px;font-size:15px} .sig p{margin:0;color:var(--muted);font-size:13.5px}
+details{margin-top:18px} summary{cursor:pointer;color:var(--green);font-weight:600;font-size:13.5px}
+table{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}
+th{text-align:left;font-size:11.5px;letter-spacing:.05em;text-transform:uppercase;color:var(--faint);padding:8px 10px;border-bottom:1px solid var(--line)}
+td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top;font-variant-numeric:tabular-nums}
+.tabwrap{overflow-x:auto}
+.hbar{display:grid;grid-template-columns:minmax(120px,230px) 1fr 52px;gap:10px;align-items:center;font-size:13px;padding:4px 0}
+.hbar .l{color:var(--ink);line-height:1.3} .hbar .l small{color:var(--faint);font-size:11px;display:block}
+.hbar .t{height:12px;background:var(--surface2);border-radius:4px;position:relative}
+.hbar .t>span{position:absolute;left:0;top:0;bottom:0;border-radius:4px;background:var(--green2)}
+.hbar.low .t>span{background:var(--warm)}
+.hbar .v{font-variant-numeric:tabular-nums;font-weight:700;text-align:right}
+footer{margin-top:56px;padding-top:18px;border-top:1px solid var(--line);color:var(--faint);font-size:12.5px;line-height:1.7}
+#tip{position:fixed;pointer-events:none;background:var(--ink);color:var(--ground);padding:6px 10px;border-radius:8px;font-size:12px;opacity:0;transition:opacity .08s;z-index:9;max-width:260px}
+</style>
+</head>
+<body>
+<div class="wrap" id="app"></div>
+<div id="tip" role="tooltip"></div>
+<script>
+const P = /*__DATA__*/null;
+const $ = (h) => { const t = document.createElement('template'); t.innerHTML = h.trim(); return t.content.firstChild; };
+const esc = (s) => String(s == null ? '' : s).replace(/[&<>"]/g, (c) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const app = document.getElementById('app');
+const add = (h) => app.insertAdjacentHTML('beforeend', h);
+const tip = document.getElementById('tip');
+const ST = P.story || {};
+const W = P.waves, C = P.comp;
+const fmtD = (iso) => { if (!iso) return ''; const [y, m, d] = String(iso).slice(0, 10).split('-'); return d + '.' + m; };
+const num = (v) => (v == null ? '—' : (Number.isInteger(v) ? v : Number(v).toFixed(1)));
+const wl = (n) => 'волна ' + n;
+
+/* ---------- шапка ---------- */
+add(`<div>
+  <div class="eyebrow">Ретроспектива внедрения ИИ · ${W.map((w) => 'волна ' + w.n).join(' · ')}</div>
+  <h1>${esc(ST.title || 'С чего начали и к чему пришли')}</h1>
+  <p class="sub">${esc(ST.subtitle || 'Дашборд собран из сырых листов опроса, таблицы метрик и репозитория. Люди не названы — только агрегаты.')}</p>
+  <div class="meta">
+    <span class="tag">Состав: <b>${C.team_size} человек</b>${C.lead_counted ? ` (отдел ${C.dept_size} + руководитель)` : ''}</span>
+    ${W.map((w) => `<span class="tag">Волна ${w.n}: <b>${w.passed_team} из ${C.team_size}</b>${P.spans[w.n] ? ' (' + fmtD(P.spans[w.n]) + ')' : ''}</span>`).join('')}
+    ${P.matched.map((m) => `<span class="tag">Прошли волны ${m.from} и ${m.to}: <b>${m.n}</b></span>`).join('')}
+  </div>
+  ${(ST.notes || []).map((n) => `<p class="cap">${esc(n)}</p>`).join('')}
+</div>`);
+
+/* ---------- главное: цифры по волнам и сквозные ---------- */
+const kp = (cls, t, from, to, s) => `<div class="card kpi ${cls}"><div class="t">${esc(t)}</div><div class="n"><span class="from">${from}</span><span class="arr">→</span><span class="to">${to}</span></div><div class="s">${s}</div></div>`;
+const cards = [];
+const wk = W.filter((w) => w.knowledge && w.knowledge.mean != null);
+if (wk.length >= 2) {
+  const a = wk[0], b = wk[wk.length - 1], d = b.knowledge.mean - a.knowledge.mean;
+  cards.push(kp(d > 1 ? 'up' : (d < -1 ? 'flat' : 'flat'), 'Верные ответы в знаниях', Math.round(a.knowledge.mean) + '%', Math.round(b.knowledge.mean) + '%', `волна ${a.n} → волна ${b.n}; наборы вопросов разные, сравнивать только в процентах`));
+}
+P.matched.forEach((m) => cards.push(kp(m.mean_to - m.mean_from > 1 ? 'up' : 'flat', `Знания у прошедших обе волны (${m.n})`, Math.round(m.mean_from) + '%', Math.round(m.mean_to) + '%', `выросли ${m.up}, просели ${m.down}, без изменений ${m.same}`)));
+const wr = W.filter((w) => w.regular);
+if (wr.length) { const a = wr[0], b = wr[wr.length - 1], pa = Math.round(a.regular.yes / a.regular.n * 100), pb = Math.round(b.regular.yes / b.regular.n * 100); cards.push(wr.length > 1 ? kp(pb > pa ? 'up' : 'flat', 'Регулярно используют ИИ', pa + '%', pb + '%', `вопрос 511: волна ${a.n} → волна ${b.n}`) : `<div class="card kpi info"><div class="t">Регулярно используют ИИ</div><div class="n"><span class="to">${pa}%</span></div><div class="s">${a.regular.yes} из ${a.regular.n}, вопрос 511 — только в волне ${a.n}</div></div>`); }
+if (P.repo && P.repo.series) { const s = P.repo.series; cards.push(kp('up', 'Инструментов в ai-tools', s[0].units, s[s.length - 1].units, `папка ${esc(P.repo.folder)}, ${fmtD(s[0].date)} → ${fmtD(s[s.length - 1].date)}; авторов из отдела ${s[0].dept_authors} → ${s[s.length - 1].dept_authors}`)); }
+const U = P.usages;
+cards.push(kp('info', 'Агент настроен / используют инструмент', U['Агент'], U['Использует инструмент'], `из ${C.usage_size} по листу Usages; подключили ai-tools — ${U['Подключил ai-tools']}, выложили артефакт — ${U['Выложил артефакт']}`));
+add(`<h2>Главное на одном экране</h2>${ST.lead ? `<p class="lead">${ST.lead}</p>` : ''}<div class="grid g3">${cards.join('')}</div>`);
+
+/* ---------- руководитель: отдельный блок ---------- */
+const LD = P.lead || [];
+if (LD.length) {
+  let h = `<h2>Наш руководитель</h2><p class="lead">Наш руководитель проходит опросы по желанию: ${LD.length} из ${W.length} волн. Её ответы сохраняются, но в метрики отдела не входят, поэтому она описана отдельно.${ST.lead_note ? ' ' + ST.lead_note : ''}</p><div class="grid g2">`;
+  LD.forEach((r, i) => {
+    const prev = LD[i - 1];
+    const parts = [];
+    if (r.knowledge != null) {
+      const d = prev && prev.knowledge != null ? r.knowledge - prev.knowledge : null;
+      parts.push(`знания: <b>${r.knowledge}%</b> верных${d == null ? '' : ` (${d > 0 ? '+' : ''}${d} п.п. к волне ${prev.wave})`}${r.timeouts ? `, не успела ответить на ${r.timeouts}` : ''}`);
+    }
+    if (r.dims) {
+      const f = (v) => (v == null ? '—' : Math.round(v));
+      parts.push(`опоры: принятие <b>${f(r.dims.adoption)}</b>, интерес <b>${f(r.dims.interest)}</b>, безопасность <b>${f(r.dims.safety)}</b>${r.portrait ? ', портрет «' + esc(r.portrait) + '»' : ''}`);
+      if (r.dims.calibration != null) parts.push(`самооценка относительно результата: ${r.dims.calibration > 0 ? '+' : ''}${Math.round(r.dims.calibration)} п.п.`);
+    }
+    h += `<div class="card"><div style="font-size:13px;color:var(--muted);font-weight:600">Волна ${r.wave}</div><p class="cap" style="font-size:14px;color:var(--ink)">${parts.join('<br>') || 'ответы сохранены'}</p>${r.picks.length ? `<details><summary>Её ответы на вопросы без правильного ответа (${r.picks.length})</summary><div class="cap">${r.picks.map((x) => `<b>${x.q}</b> ${esc(x.text.slice(0, 90))}${x.text.length > 90 ? '…' : ''}<br>→ ${esc(x.choice)}<br><br>`).join('')}</div></details>` : ''}</div>`;
+  });
+  h += '</div>';
+  const kn = LD.filter((r) => r.knowledge != null);
+  if (kn.length >= 2) { const d = kn[kn.length - 1].knowledge - kn[0].knowledge; h += `<p class="cap">Итог по знаниям: ${kn[0].knowledge}% (волна ${kn[0].wave}) → ${kn[kn.length - 1].knowledge}% (волна ${kn[kn.length - 1].wave}), ${d > 0 ? 'рост' : (d < 0 ? 'снижение' : 'без изменений')} ${d ? Math.abs(d) + ' п.п.' : ''}. Наборы вопросов в волнах разные, сравнение условное.</p>`; }
+  add(h);
+}
+
+/* ---------- выводы человека ---------- */
+if ((ST.findings || []).length) {
+  add(`<h2>Выводы</h2><div class="grid g2" style="gap:14px">${ST.findings.map((f) => `<div class="card sig ${f.tone === 'ok' ? 'ok' : (f.tone === 'info' ? 'cool' : '')}"><div class="k"></div><div><h3>${esc(f.title)}</h3><p>${f.text}</p></div></div>`).join('')}</div>`);
+}
+
+/* ---------- по каждой волне ---------- */
+W.forEach((w) => {
+  let h = `<h2>Волна ${w.n}</h2>`;
+  const bits = [];
+  bits.push(`прошли ${w.passed_team} из ${C.team_size}${w.passed_lead ? ' (и руководитель, в метрики не входит)' : ''}`);
+  if (w.knowledge) bits.push(`знания: ${num(w.knowledge.mean)}% верных на ${w.knowledge.questions} вопросах`);
+  if (w.dims) bits.push(`опоры: принятие ${num(w.dims.adoption)}, интерес ${num(w.dims.interest)}, безопасность ${num(w.dims.safety)}`);
+  h += `<p class="lead">${bits.join(' · ')}.</p>`;
+  if (w.dims) {
+    const ps = Object.entries(w.dims.portrait || {});
+    h += `<div class="grid g2"><div class="card"><div style="font-size:13px;color:var(--muted);font-weight:600">Три опоры, 0–100 (${w.dims.n} чел.)</div>${[['Принятие', w.dims.adoption], ['Интерес', w.dims.interest], ['Безопасность', w.dims.safety]].map(([l, v]) => `<div class="row"><span>${l}</span><b>${Math.round(v)}</b></div><div class="bar"><span style="width:${v}%"></span></div>`).join('')}<div class="cap">Итоговый индекс ${num(w.dims.avg)}; калибровка (самооценка − факт) ${w.dims.calibration == null ? '—' : (w.dims.calibration > 0 ? '+' : '') + num(w.dims.calibration) + ' п.п.'}</div></div>
+    <div class="card"><div style="font-size:13px;color:var(--muted);font-weight:600">Портреты</div><div class="split">${ps.map(([k, v], i) => `<div style="flex:${v};background:${['var(--green2)', 'var(--cool)', 'var(--warm)', 'var(--grey)'][i % 4]}">${esc(k)} · ${v}</div>`).join('')}</div></div></div>`;
+  }
+  if (w.knowledge && w.knowledge.per_q.length) {
+    const rows = w.knowledge.per_q.slice().sort((a, b) => (a.pct ?? 0) - (b.pct ?? 0));
+    h += `<div class="lead" style="margin-top:22px"><b>Знания по вопросам</b> (доля верных, ${w.passed_team} чел.; не успели: ${w.knowledge.timeouts} ответов из ${w.knowledge.answers})</div><div class="card">${rows.map((q) => `<div class="hbar ${q.pct != null && q.pct <= 60 ? 'low' : ''}"><span class="l">${esc(q.text.length > 90 ? q.text.slice(0, 88) + '…' : q.text)}<small>вопрос ${q.id}${q.timeout ? ' · не успели: ' + q.timeout : ''}</small></span><span class="t"><span style="width:${q.pct || 0}%"></span></span><span class="v">${q.pct == null ? '—' : q.pct + '%'}</span></div>`).join('')}</div>`;
+  }
+  const softIds = Object.keys(w.soft || {}).filter((q) => w.soft[q].n >= 3);
+  if (softIds.length) {
+    h += `<div class="lead" style="margin-top:22px"><b>Ответы на вопросы без правильного ответа</b> (отдел, доли от ответивших)</div><div class="grid g3" id="soft${w.n}"></div>`;
+  }
+  add(h);
+  const COL = ['var(--green2)', 'var(--cool)', 'var(--warm)', 'var(--grey)', 'var(--faint)'];
+  const G = document.getElementById('soft' + w.n);
+  softIds.forEach((q) => {
+    const s = w.soft[q], keys = Object.keys(s.counts).sort();
+    const split = keys.map((k, i) => `<div style="flex:${s.counts[k]};background:${COL[i % COL.length]}" title="${s.counts[k]} из ${s.n}">${s.counts[k]}</div>`).join('');
+    const leg = keys.map((k, i) => `<span><i style="background:${COL[i % COL.length]}"></i>${esc(k === 'own' ? 'свой ответ' : (s.opts[k] || k).slice(0, 80))}: <b>${s.counts[k]}</b></span>`).join('');
+    G.append($(`<div class="card q"><div class="id">ВОПРОС ${q} · n=${s.n}</div><h3>${esc(s.text.length > 110 ? s.text.slice(0, 108) + '…' : s.text)}</h3><div class="split">${split}</div><div class="legend">${leg}</div></div>`));
+  });
+});
+
+/* ---------- метрики отдела ---------- */
+const M = P.metrics;
+if (M && M.series.length) {
+  add(`<h2>Метрики отдела · лист «${esc(M.sheet)}»</h2><p class="lead">Ряды из таблицы метрик; штриховая линия — цель. Значения таблицы вносит человек, они могут отставать от дат столбцов — репозиторий считается отдельно, ниже.</p><div class="grid g4" id="mc"></div>`);
+  const MC = document.getElementById('mc');
+  M.series.forEach((s) => {
+    const max = Math.max(s.target || 0, ...s.v, 1), Wd = 220, H = 118, base = 96, top = 22, n = s.v.length, bw = Math.min(40, Math.floor((Wd - 40) / n) - 10), gap = (Wd - 40 - bw * n) / Math.max(n - 1, 1);
+    const h = (v) => v / max * (base - top);
+    let g = `<line x1="8" x2="${Wd - 8}" y1="${base}" y2="${base}" stroke="var(--line)" stroke-width="1.5"/>`;
+    if (s.target) g += `<line x1="8" x2="${Wd - 8}" y1="${base - h(s.target)}" y2="${base - h(s.target)}" stroke="var(--faint)" stroke-dasharray="4 3"/>`;
+    s.v.forEach((v, i) => {
+      const x = 20 + i * (bw + gap), hh = Math.max(h(v), v ? 2 : 0), lbl = s.kind === 'pct' && v <= 1 ? Math.round(v * 100) + '%' : num(v);
+      g += `<rect x="${x}" y="${base - hh}" width="${bw}" height="${hh}" rx="4" fill="${i === n - 1 ? 'var(--green)' : 'var(--green2)'}" opacity="${i === n - 1 ? 1 : .6}" data-tip="${esc(s.name)} · ${esc(s.dates[i])}: ${lbl}"/><text class="val" x="${x + bw / 2}" y="${base - hh - 5}" text-anchor="middle">${lbl}</text><text class="axis" x="${x + bw / 2}" y="${base + 14}" text-anchor="middle">${esc(String(s.dates[i]).slice(0, 5))}</text>`;
+    });
+    MC.append($(`<div class="card mc"><h3>${esc(s.name.length > 60 ? s.name.slice(0, 58) + '…' : s.name)}</h3><svg viewBox="0 0 220 118">${g}</svg>${s.target ? `<div class="dl">цель ${s.kind === 'pct' && s.target <= 1 ? Math.round(s.target * 100) + '%' : s.target}</div>` : ''}</div>`));
+  });
+}
+
+/* ---------- репозиторий ---------- */
+const R = P.repo;
+if (R && R.series) {
+  const RS = R.series, rmax = Math.max(...RS.map((s) => s.units), 1), RW = 640, RH = 190, rb = 150, rt = 24, rbw = Math.floor((RW - 40) / RS.length) - 6;
+  let rg = `<line x1="14" x2="${RW - 6}" y1="${rb}" y2="${rb}" stroke="var(--line)" stroke-width="1.5"/>`;
+  RS.forEach((s, i) => {
+    const x = 20 + i * (rbw + 6), h = s.units / rmax * (rb - rt), [yy, mm, dd] = s.date.split('-');
+    rg += `<rect x="${x}" y="${rb - h}" width="${rbw}" height="${h}" rx="4" fill="var(--green2)" opacity="${i === RS.length - 1 ? 1 : .7}" data-tip="${dd}.${mm}: инструментов ${s.units}, файлов ${s.files}, авторов из отдела ${s.dept_authors}"/><text class="val" x="${x + rbw / 2}" y="${rb - h - 5}" text-anchor="middle">${s.units}</text>`;
+    if (i % 2 === 0 || i === RS.length - 1) rg += `<text class="axis" x="${x + rbw / 2}" y="${rb + 14}" text-anchor="middle">${dd}.${mm}</text>`;
+  });
+  const N = R.now;
+  add(`<h2>Общий репозиторий ai-tools · папка ${esc(R.folder)}</h2><p class="lead">Считается по самому репозиторию (ветка main): единица — инструмент (скилл, скрипт, архив MCP, документ), автор — из index.md, только сотрудники отдела. Сейчас: <b>${N.units}</b> инструментов, ${N.files} файлов, авторов из отдела ${N.dept_authors}.</p><div class="card"><div style="font-size:13px;color:var(--muted);font-weight:600">Инструментов по неделям</div><svg viewBox="0 0 ${RW} ${RH}" style="width:100%;height:auto;margin-top:8px">${rg}</svg></div>`);
+} else if (R && R.error) add(`<p class="cap">Репозиторий не посчитан: ${esc(R.error)}</p>`);
+
+/* ---------- обмены опытом и голосование (необязательно) ---------- */
+if (P.exch) add(`<h2>Обмены опытом</h2><p class="lead">С 16.07 по листу «Обмены опытом»: проведено ${P.exch.held}, в плане ещё ${P.exch.planned}. Вели ${P.exch.leaders_held} разных сотрудников, с плановыми — ${P.exch.leaders_all}.</p>`);
+if (P.votes) {
+  const topN = P.votes.topics.slice(0, 10), vmax = Math.max(...topN.map((x) => x.score), 1);
+  add(`<h2>Голосование за темы</h2><p class="lead">Проголосовали ${P.votes.voters_dept} из ${P.votes.team}.</p><div class="card" id="vt"></div>`);
+  topN.forEach((x) => document.getElementById('vt').append($(`<div class="hbar" style="grid-template-columns:minmax(150px,260px) 1fr 40px"><span class="l">${esc(x.topic)}<small>${x.fires} «огн.» · ${x.meeting ? (/не выполнено/.test(x.meeting.status) ? 'в плане ' : 'проведена ') + esc(String(x.meeting.date).slice(0, 5)) + (x.meeting.name.toLowerCase() === x.topic.toLowerCase() ? '' : ' («' + esc(x.meeting.name) + '»)') : 'в таблице метрик встречи с таким названием нет'}</small></span><span class="t"><span style="width:${x.score / vmax * 100}%"></span></span><span class="v">${x.score}</span></div>`)));
+}
+
+/* ---------- хронология мероприятий ---------- */
+if (M && M.events && M.events.length) {
+  const ev = M.events.filter((e) => e.date).map((e) => { const [d, m, y] = String(e.date).split('.'); return {iso: `${y}-${m}-${d}`, d: String(e.date).slice(0, 5), t: e.name, plan: !/выполнено|готово/i.test(e.status || '')}; }).sort((a, b) => a.iso.localeCompare(b.iso));
+  add(`<h2>Мероприятия по таблице метрик</h2><div class="tl">${ev.map((e) => `<div class="ev ${e.plan ? 'plan' : ''}"><span class="d">${e.d}</span><span class="x">${esc(e.t)}</span></div>`).join('')}</div>`);
+}
+
+add(`<footer>Построено ${esc(P.built)} скриптом retro.py. Состав: Usages «Участвует? = Да» плюс руководитель (проходит по желанию, считается вместе с остальными; в Usages её нет, поэтому показатели из Usages и репозитория — по отделу); тестовые профили не входят. Знания — процент верных от личного набора, таймаут считается неверным; волны с разным набором вопросов сравниваются только в процентах. Значения таблицы метрик вносит человек, репозиторий считается по git.</footer>`);
+
+document.addEventListener('mousemove', (e) => {
+  const t = e.target.closest && e.target.closest('[data-tip]');
+  if (!t) { tip.style.opacity = 0; return; }
+  tip.textContent = t.getAttribute('data-tip'); tip.style.opacity = 1;
+  tip.style.left = Math.min(e.clientX + 14, innerWidth - 270) + 'px'; tip.style.top = (e.clientY + 14) + 'px';
+});
+</script>
+</body>
+</html>

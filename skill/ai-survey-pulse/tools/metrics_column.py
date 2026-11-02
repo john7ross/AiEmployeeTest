@@ -144,17 +144,22 @@ def _time_saving(ctx):
 
 
 def _from_134(usage_signal, letters, label):
-    """Строка про репозиторий: по вопросу 134, а если его в волне не было — по листу Usages."""
+    """Строка про репозиторий: человек засчитывается, если ЛЮБОЙ источник это подтверждает — лист Usages
+    или вопрос 134 (если он был в волне). Знаменатель один — отдел. Расхождение источников показывается
+    в примечании, чтобы можно было поправить тот, что отстаёт (решение владельца 02.11.2026: считаем
+    комплексно по всем источникам, а не по одному)."""
     def fn(ctx):
-        got = _dept_answers(ctx, "134")
-        if not got:
-            val, note = _usage(usage_signal)(ctx)
-            return val, note + " (вопроса 134 в волне не было)"
-        yes = [p for p, v in got if v in letters]
-        d = ctx["usage_dept"]
-        silent = ctx["dept_size"] - len(got)
-        return len(yes), (f"вопрос 134, {label}: {len(yes)} из {len(got)} ответивших; "
-                          f"не ответили {silent} чел. (они в число не входят); Usages: {d['counts'].get(usage_signal)}")
+        key = "connected_ids" if usage_signal == "Подключил ai-tools" else "using_ids"
+        ids = ctx[key]
+        by_usage = ctx["usage_yes"][usage_signal]
+        by_survey = ctx["survey_yes"][key]
+        note = f"{label}: {len(ids)} из {ctx['dept_size']} (по любому источнику: Usages — {len(by_usage)}"
+        if ctx["survey_yes"]["asked"]:
+            note += f", вопрос 134 — {len(by_survey)} из {ctx['survey_yes']['asked']}"
+        extra = ctx["dept_names"]
+        gap = sorted(extra[i] for i in ctx["dept_ids"] if i not in ids)
+        note += ")" + (f"; нет подтверждения ни в одном источнике: {', '.join(gap)}" if gap else "")
+        return len(ids), note
     return fn
 
 
@@ -248,13 +253,24 @@ def build_context(analysis, metrics, repo_asof=None, no_fetch=False):
     # из ai-tools. Одно посещение встреч не считается. Выступление на обмене опытом
     # видно через автора материала; выступил без материала — отметить на листе Usages
     # признаком «Выложил артефакт».
-    active = set(ctx.get("dept_authors", {}))
-    for m in members:
-        u = m["usage"]
-        if u.get("Использует инструмент", "").lower() == "да" or u.get("Выложил артефакт", "").lower() == "да":
-            active.add(m["id"])
+    # Источники смотрим вместе: Usages, вопрос 134 (если был в волне), авторство в репозитории.
+    yes = lambda m, sig: str(m["usage"].get(sig, "")).strip().lower() == "да"
+    ctx["dept_names"] = {m["id"]: m["name"] for m in members}
+    ctx["usage_yes"] = {sig: {m["id"] for m in members if yes(m, sig)}
+                        for sig in ("Подключил ai-tools", "Использует инструмент", "Выложил артефакт")}
+    a134 = _dept_answers(ctx, "134")
+    s_conn = {p["id"] for p, v in a134 if v in ("B", "C", "D")}
+    s_use = {p["id"] for p, v in a134 if v in ("C", "D")}
+    ctx["survey_yes"] = {"asked": len(a134), "connected_ids": s_conn, "using_ids": s_use}
+    authors = set(ctx.get("dept_authors", {}))
+    ctx["connected_ids"] = (ctx["usage_yes"]["Подключил ai-tools"] | s_conn | authors) & ctx["dept_ids"]
+    ctx["using_ids"] = (ctx["usage_yes"]["Использует инструмент"] | s_use) & ctx["dept_ids"]
+    # «Вовлечённые» — комплексно по сотруднику, по любому источнику: автор в папке отдела, «Да» на Usages
+    # по «Использует инструмент» / «Выложил артефакт», ответ в опросе (134): брал чужие инструменты.
+    # Владелец 02.11.2026: «по всем источникам значит смотрим и на Usages, и на опросы, и на репозиторий».
+    active = (authors | ctx["usage_yes"]["Использует инструмент"] | ctx["usage_yes"]["Выложил артефакт"] | s_use) & ctx["dept_ids"]
     ctx["active_ids"] = active
-    ctx["active_how"] = "автор в репозитории или «Использует инструмент»/«Выложил артефакт» на Usages"
+    ctx["active_how"] = "по любому источнику: автор в репозитории, Usages («Использует инструмент»/«Выложил артефакт»), вопрос 134"
 
     # Портреты — из последней волны, где они считались (волна знаний их не даёт).
     cur_wave = analysis.get("wave", 1)
